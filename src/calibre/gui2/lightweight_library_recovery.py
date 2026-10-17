@@ -133,12 +133,16 @@ def reconnect_from_original_tree(library, source, ids=None):
     from calibre.gui2.external_book_store import read_comic_info, comic_identity
     # Build a one-to-one fallback index for CBZs whose calibre folder moved.
     cbz_candidates = {}
+    filename_candidates = {}
     for base, dirs, names in os.walk(source, followlinks=False):
         dirs[:] = [n for n in dirs if not os.path.islink(os.path.join(base, n))]
         for name in names:
+            candidate = os.path.join(base, name)
+            if os.path.islink(candidate):
+                continue
+            filename_candidates.setdefault(name.casefold(), []).append(candidate)
             if not name.lower().endswith('.cbz'):
                 continue
-            candidate = os.path.join(base, name)
             try:
                 identity = comic_identity(read_comic_info(candidate))
                 if identity[0] and identity[2]:
@@ -147,6 +151,7 @@ def reconnect_from_original_tree(library, source, ids=None):
                 continue
     db = LibraryDatabase(library)
     outcomes = []
+    used_files = set()
     try:
         cache = db.new_api
         selection = sorted(ids if ids is not None else cache.all_book_ids())
@@ -197,10 +202,22 @@ def reconnect_from_original_tree(library, source, ids=None):
                     else:
                         candidates = [item.path for item in choices]
                     if len(candidates) != 1:
+                        # When the original author/title folder changed, recover from the
+                        # exact calibre format filename only if it occurs once in the source.
+                        original_name = cache.fields['formats'].format_fname(book_id, str(fmt).upper())
+                        if original_name:
+                            matches = filename_candidates.get((original_name + ext).casefold(), ())
+                            candidates = matches if len(matches) == 1 else ()
+                    if len(candidates) != 1:
                         outcomes.append([book_id, fmt, 'missing-or-ambiguous'])
                         continue
+                    chosen = os.path.realpath(candidates[0])
+                    if chosen in used_files:
+                        outcomes.append([book_id, fmt, 'source-already-used'])
+                        continue
                     # Use calibre's format API so the database remains consistent.
-                    cache.add_format(book_id, str(fmt).upper(), candidates[0], replace=True)
+                    cache.add_format(book_id, str(fmt).upper(), chosen, replace=True)
+                    used_files.add(chosen)
                     outcomes.append([book_id, fmt, 'attached'])
             except Exception as err:
                 outcomes.append([book_id, '', 'error: ' + str(err)])
