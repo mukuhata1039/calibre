@@ -4,7 +4,7 @@
 from collections import Counter
 from functools import partial
 
-from qt.core import QDialog, QModelIndex, QObject, QTimer
+from qt.core import QDialog, QMessageBox, QModelIndex, QObject, QTimer
 
 from calibre.constants import ismacos
 from calibre.db.errors import BooksNotRemoved
@@ -442,6 +442,16 @@ class DeleteAction(InterfaceActionWithLibraryDrop):
         return self.message_popup
 
     def library_ids_deleted2(self, ids_deleted, next_id=None, can_undo=False):
+        external_action = getattr(self, '_external_delete_action', None)
+        if external_action is not None:
+            from calibre.gui2.external_book_store import finalize_deleted_external_books
+            library, removal = external_action
+            failures = finalize_deleted_external_books(library, ids_deleted, remove_files=removal)
+            if failures:
+                error_dialog(self.gui, '外部保管庫の整理に失敗',
+                    'calibreから書籍は削除されましたが、外部保管庫の整理に失敗しました。',
+                    det_msg='\\n'.join(f'{k}: {v}' for k, v in failures.items()), show=True)
+            self._external_delete_action = None
         view = self.gui.library_view
         current_row = None
         if next_id is not None:
@@ -542,6 +552,40 @@ class DeleteAction(InterfaceActionWithLibraryDrop):
             self.gui,
         ):
             return
+        from calibre.gui2.external_book_store import load_manifest, resolve_external_format
+        library = self.gui.current_db.library_path
+        manifest = load_manifest(library)
+        registered = [
+            book_id for book_id in to_delete_ids
+            if manifest.get('books', {}).get(str(int(book_id)))
+        ]
+        remove_external = False
+        if registered:
+            for book_id in registered:
+                for fmt in manifest['books'][str(int(book_id))]:
+                    if not resolve_external_format(library, book_id, fmt):
+                        error_dialog(self.gui, '外部保管庫が利用できません',
+                            f'書籍 ID {book_id} の外部{fmt}が見つかりません。'
+                            '外部ドライブを接続してから再実行してください。', show=True)
+                        return
+            box = QMessageBox(self.gui)
+            box.setWindowTitle('外部CBZの削除方法')
+            box.setText(f'選択書籍のうち{len(registered)}冊が外部保管庫に登録されています。')
+            box.setInformativeText(
+                '外部ファイルを残すか、外部保管庫の退避フォルダへ移すか選択してください。'
+                '退避した外部ファイルの復元はまだcalibreの「元に戻す」と連動していません。'
+            )
+            keep = box.addButton('外部ファイルを残す', QMessageBox.ButtonRole.AcceptRole)
+            recycle = box.addButton('外部ファイルを退避する', QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton('中止', QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is keep:
+                remove_external = False
+            elif box.clickedButton() is recycle:
+                remove_external = True
+            else:
+                return
+        self._external_delete_action = (library, remove_external) if registered else None
         if len(to_delete_ids) < 5:
             try:
                 view.model().delete_books_by_id(to_delete_ids)
