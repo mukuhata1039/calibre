@@ -152,6 +152,18 @@ class PreAddPreview(QDialog):
         row.addWidget(self.series)
         root.addLayout(row)
 
+        sort_row = QHBoxLayout()
+        sort_row.addWidget(QLabel('シリーズの読み'))
+        self.series_reading = QLineEdit()
+        self.series_reading.setPlaceholderText('ひらがな・カタカナ（必要なら修正）')
+        self.series_reading.textChanged.connect(self.update_roman_preview)
+        sort_row.addWidget(self.series_reading)
+        sort_row.addWidget(QLabel('ローマ字ソート'))
+        self.series_roman = QLineEdit()
+        self.series_roman.setPlaceholderText('alphabetic sort key')
+        sort_row.addWidget(self.series_roman)
+        root.addLayout(sort_row)
+
         details = QHBoxLayout()
         details.addWidget(QLabel('著者名'))
         self.author_inputs = []
@@ -238,6 +250,22 @@ class PreAddPreview(QDialog):
             if not book.get('category'):
                 book['category'] = default_library
 
+    def romanize(self, text):
+        if not text.strip():
+            return ''
+        try:
+            from calibre_extensions.icu import Transliterator
+            converter = getattr(self, '_roman_transliterator', None)
+            if converter is None:
+                converter = Transliterator('preadd_japanese_roman', ':: Any-Latin; :: Latin-ASCII; :: Lower;')
+                self._roman_transliterator = converter
+            return converter.transliterate(text).strip().lower()
+        except Exception:
+            return text.strip().lower()
+
+    def update_roman_preview(self, value):
+        self.series_roman.setText(self.romanize(value))
+
     def library_changed(self, _index):
         library = self.category.currentData()
         if not library:
@@ -267,6 +295,7 @@ class PreAddPreview(QDialog):
             os.path.normcase(os.path.abspath(book['path'])): {
                 'title': book.get('title', ''),
                 'series': book['series'],
+                'series_roman': book.get('series_roman') or self.romanize(book.get('series_reading') or book['series']),
                 'series_index': book['number'],
                 'authors': book['author'],
                 'publisher': book['publisher'],
@@ -303,6 +332,8 @@ class PreAddPreview(QDialog):
         book = self.books[entry.data(Qt.ItemDataRole.UserRole)]
         self.title.setText(book.get('title', ''))
         self.series.setText(book.get('series', ''))
+        self.series_reading.setText(book.get('series_reading', ''))
+        self.series_roman.setText(book.get('series_roman', ''))
         self.publisher.setText(book.get('publisher', ''))
         idx = self.category.findData(book.get('category', self.default_library))
         if idx >= 0:
@@ -364,6 +395,8 @@ class PreAddPreview(QDialog):
             self.books.append({
                 'path': path, 'title': info.get('title') or name,
                 'series': info.get('series', ''),
+                'series_reading': '',
+                'series_roman': self.romanize(info.get('series', '')),
                 'number': info.get('number', number),
                 'tags': info.get('tags', ''),
                 'author': '×'.join(info.get('authors', [])),
@@ -446,6 +479,8 @@ class PreAddPreview(QDialog):
         for i in self.selected():
             self.books[i]['title'] = self.title.text().strip()
             self.books[i]['series'] = self.series.text().strip()
+            self.books[i]['series_reading'] = self.series_reading.text().strip()
+            self.books[i]['series_roman'] = self.series_roman.text().strip()
             self.books[i]['author'] = self.author_display_name()
             # Destination is updated immediately on combo selection.
             self.books[i]['publisher'] = self.publisher.text().strip()
