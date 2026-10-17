@@ -2,6 +2,7 @@
 # calibre pre-add grouped metadata editor — prototype only.
 # No changes to the library or source book files.
 import json
+from copy import deepcopy
 import os
 import re
 import sys
@@ -9,7 +10,7 @@ import sys
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QComboBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence,
 )
 
  
@@ -65,6 +66,10 @@ class PreAddPreview(QDialog):
         self.order_mode = False
         self.order_candidates = set()
         self.order_clicks = []
+        self.undo_stack = []
+        self.undo_shortcut = QShortcut(QKeySequence('Ctrl+Z'), self)
+        self.undo_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.undo_shortcut.activated.connect(self.undo)
         root = QVBoxLayout(self)
         root.addWidget(QLabel('書籍をここにドロップ。複数選択し、グループごとに共通情報を設定します。\n試作版：ライブラリへの登録はしません。'))
 
@@ -179,6 +184,7 @@ class PreAddPreview(QDialog):
             m = re.search(r'(?:第\s*(\d+)\s*巻|(?:vol\.?|volume)\s*0*(\d+)|[ _（(]0*(\d{1,3})[）)]?$)', name, re.I)
             number = next((int(v) for v in m.groups() if v), None) if m else None
             self.books.append({'path': path, 'series': '', 'number': number, 'tags': '', 'author': '', 'category': '', 'publisher': '', 'configured': False})
+        self.save_undo()
         self.refresh()
 
     def refresh(self, *_):
@@ -217,7 +223,23 @@ class PreAddPreview(QDialog):
         return [self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
                 for idx in self.table.selectionModel().selectedRows()]
 
+    def save_undo(self):
+        self.undo_stack.append(deepcopy(self.books))
+        if len(self.undo_stack) > 100:
+            self.undo_stack.pop(0)
+
+    def undo(self):
+        if self.order_mode:
+            self.undo_order()
+            return
+        if self.undo_stack:
+            self.books = self.undo_stack.pop()
+            self.refresh()
+
     def apply(self):
+        if not self.selected():
+            return
+        self.save_undo()
         for i in self.selected():
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['tags'] = self.tags.text().strip()
@@ -228,6 +250,9 @@ class PreAddPreview(QDialog):
         self.refresh()
 
     def number(self):
+        if not self.selected():
+            return
+        self.save_undo()
         # Current table order, not filename order.
         selected = set(self.selected())
         ordered = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
@@ -243,6 +268,9 @@ class PreAddPreview(QDialog):
             return
         i = item.data(Qt.ItemDataRole.UserRole)
         try:
+            parsed = float(item.text()) if item.text().strip() else None
+            if self.books[i]['number'] != parsed:
+                self.save_undo()
             self.books[i]['number'] = float(item.text()) if item.text().strip() else None
         except ValueError:
             QMessageBox.warning(self, '入力エラー', '巻数は数字で入力してください。')
@@ -305,6 +333,7 @@ class PreAddPreview(QDialog):
     def confirm_order(self):
         if not self.order_mode or len(self.order_clicks) != len(self.order_candidates):
             return
+        self.save_undo()
         for offset, idx in enumerate(self.order_clicks):
             self.books[idx]['number'] = self.order_start + offset
             self.books[idx]['configured'] = True
@@ -320,6 +349,9 @@ class PreAddPreview(QDialog):
         remaining = [i for i in visible if i not in chosen]
         insert_at = sum(i not in chosen for i in visible[:target_row])
         reordered_visible = remaining[:insert_at] + moving + remaining[insert_at:]
+        if reordered_visible == visible:
+            return False
+        self.save_undo()
         # When filtering, leave hidden books in place.
         iterator = iter(self.books[i] for i in reordered_visible)
         visible_set = set(visible)
