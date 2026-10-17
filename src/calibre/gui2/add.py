@@ -692,6 +692,9 @@ class Adder(QObject):
                                 raise FileNotFoundError('Imported calibre format is missing')
                             copy_to_store(canonical, store, relative)
                             register_external_format(library_path, book_id, fmt, relative)
+                            if fmt.lower() == 'cbz':
+                                from calibre.gui2.external_book_store import queue_comic_info_sync
+                                queue_comic_info_sync(library_path, book_id)
                         except Exception:
                             self.report.append(
                                 'External mirror was not completed for ' + mi.title
