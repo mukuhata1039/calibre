@@ -12,6 +12,35 @@ from qt.core import (
     QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt,
 )
 
+ 
+class ReorderTable(QTableWidget):
+    def __init__(self, owner):
+        super().__init__(0, 8)
+        self.owner = owner
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setDropIndicatorShown(True)
+
+    def dropEvent(self, event):
+        if event.source() is not self:
+            event.ignore()
+            return
+        point = event.position().toPoint()
+        target = self.indexAt(point).row()
+        pos = self.dropIndicatorPosition()
+        if target < 0:
+            target = self.rowCount()
+        elif pos == QAbstractItemView.DropIndicatorPosition.BelowItem:
+            target += 1
+        elif pos == QAbstractItemView.DropIndicatorPosition.OnItem:
+            target += 1 if point.y() > self.visualRect(self.model().index(target, 0)).center().y() else 0
+        if self.owner.reorder_selected(target):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
 
 class PreAddPreview(QDialog):
     def __init__(self):
@@ -32,7 +61,7 @@ class PreAddPreview(QDialog):
         controls.addStretch()
         root.addLayout(controls)
 
-        self.table = QTableWidget(0, 8)
+        self.table = ReorderTable(self)
         self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'シリーズ名', '巻数', '著者名', '作品区分', '出版社', '状態'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -42,12 +71,6 @@ class PreAddPreview(QDialog):
         root.addWidget(self.table)
 
         row = QHBoxLayout()
-        up = QPushButton('↑ 上へ')
-        up.clicked.connect(lambda: self.move(-1))
-        row.addWidget(up)
-        down = QPushButton('↓ 下へ')
-        down.clicked.connect(lambda: self.move(1))
-        row.addWidget(down)
         row.addWidget(QLabel('シリーズ名'))
         self.series = QLineEdit()
         row.addWidget(self.series)
@@ -176,21 +199,23 @@ class PreAddPreview(QDialog):
             QMessageBox.warning(self, '入力エラー', '巻数は数字で入力してください。')
             self.refresh()
 
-    def move(self, delta):
-        selected = self.selected()
-        if len(selected) != 1:
-            QMessageBox.information(self, '並べ替え', '本を1冊だけ選択してください。')
-            return
-        i = selected[0]
-        j = i + delta
-        if not 0 <= j < len(self.books):
-            return
-        self.books[i], self.books[j] = self.books[j], self.books[i]
+    def reorder_selected(self, target_row):
+        chosen = set(self.selected())
+        if not chosen:
+            return False
+        visible = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                   for row in range(self.table.rowCount())]
+        moving = [i for i in visible if i in chosen]
+        remaining = [i for i in visible if i not in chosen]
+        insert_at = sum(i not in chosen for i in visible[:target_row])
+        reordered_visible = remaining[:insert_at] + moving + remaining[insert_at:]
+        # When filtering, leave hidden books in place.
+        iterator = iter(self.books[i] for i in reordered_visible)
+        visible_set = set(visible)
+        self.books = [next(iterator) if i in visible_set else book
+                      for i, book in enumerate(self.books)]
         self.refresh()
-        for row in range(self.table.rowCount()):
-            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == j:
-                self.table.selectRow(row)
-                break
+        return True
 
     def export(self):
         path, _ = QFileDialog.getSaveFileName(self, '設定を書き出す', 'preadd-settings.json', 'JSON (*.json)')
