@@ -23,7 +23,21 @@ class ReorderTable(QTableWidget):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setDropIndicatorShown(True)
 
+    def mousePressEvent(self, event):
+        if self.owner.order_mode:
+            index = self.indexAt(event.position().toPoint())
+            if index.isValid() and event.button() == Qt.MouseButton.LeftButton:
+                item = self.item(index.row(), 0)
+                if item is not None:
+                    self.owner.record_order_click(item.data(Qt.ItemDataRole.UserRole))
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
     def dropEvent(self, event):
+        if self.owner.order_mode:
+            event.ignore()
+            return
         if event.source() is not self:
             event.ignore()
             return
@@ -48,6 +62,9 @@ class PreAddPreview(QDialog):
         self.setWindowTitle('calibre 登録前グループ設定 — 試作版')
         self.resize(1350, 700)
         self.books = []
+        self.order_mode = False
+        self.order_candidates = set()
+        self.order_clicks = []
         root = QVBoxLayout(self)
         root.addWidget(QLabel('書籍をここにドロップ。複数選択し、グループごとに共通情報を設定します。\n試作版：ライブラリへの登録はしません。'))
 
@@ -105,8 +122,26 @@ class PreAddPreview(QDialog):
         number = QPushButton('表示順に連番を設定')
         number.clicked.connect(self.number)
         row.addWidget(number)
+        self.click_order_button = QPushButton('クリック順で巻数指定')
+        self.click_order_button.clicked.connect(self.begin_order_mode)
+        row.addWidget(self.click_order_button)
         row.addStretch()
         root.addLayout(row)
+
+        order_controls = QHBoxLayout()
+        self.order_status = QLabel('複数選択して「クリック順で巻数指定」を押してください。')
+        order_controls.addWidget(self.order_status)
+        self.undo_order_button = QPushButton('ひとつ戻す')
+        self.undo_order_button.clicked.connect(self.undo_order)
+        order_controls.addWidget(self.undo_order_button)
+        self.cancel_order_button = QPushButton('キャンセル')
+        self.cancel_order_button.clicked.connect(self.cancel_order)
+        order_controls.addWidget(self.cancel_order_button)
+        self.confirm_order_button = QPushButton('順番を確定')
+        self.confirm_order_button.clicked.connect(self.confirm_order)
+        order_controls.addWidget(self.confirm_order_button)
+        root.addLayout(order_controls)
+        self.update_order_controls()
 
         row = QHBoxLayout()
         row.addWidget(QLabel('巻数はセルをダブルクリックして個別に変更できます。'))
@@ -154,13 +189,17 @@ class PreAddPreview(QDialog):
                 continue
             row = self.table.rowCount()
             self.table.insertRow(row)
-            vals = [i + 1, os.path.basename(book['path']), book['series'], book['number'], book['author'], book['category'], book['publisher'],
+            rank = self.order_clicks.index(i) + 1 if i in self.order_clicks else None
+            display_index = f'{self.start.value() + rank - 1}巻' if rank is not None else i + 1
+            vals = [display_index, os.path.basename(book['path']), book['series'], book['number'], book['author'], book['category'], book['publisher'],
                     '設定済' if book['configured'] else '未設定']
             for col, value in enumerate(vals):
                 item = QTableWidgetItem('' if value is None else str(value))
                 item.setData(Qt.ItemDataRole.UserRole, i)
-                if col != 3:
+                if col != 3 or self.order_mode:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if self.order_mode and i in self.order_candidates:
+                    item.setBackground(Qt.GlobalColor.lightGray if i in self.order_clicks else Qt.GlobalColor.white)
                 self.table.setItem(row, col, item)
         self.table.blockSignals(False)
 
@@ -198,6 +237,68 @@ class PreAddPreview(QDialog):
         except ValueError:
             QMessageBox.warning(self, '入力エラー', '巻数は数字で入力してください。')
             self.refresh()
+
+    def update_order_controls(self):
+        active = self.order_mode
+        self.click_order_button.setEnabled(not active)
+        self.undo_order_button.setEnabled(active and bool(self.order_clicks))
+        self.cancel_order_button.setEnabled(active)
+        self.confirm_order_button.setEnabled(active and len(self.order_clicks) == len(self.order_candidates))
+        self.remaining.setEnabled(not active)
+        self.start.setEnabled(not active)
+        self.table.setDragEnabled(not active)
+        if active:
+            self.order_status.setText(
+                f'クリック順を指定中: {len(self.order_clicks)} / {len(self.order_candidates)}冊'
+                '（選択した本を正しい順番にクリック）'
+            )
+        else:
+            self.order_status.setText('複数選択して「クリック順で巻数指定」を押してください。')
+
+    def begin_order_mode(self):
+        candidates = set(self.selected())
+        if not candidates:
+            QMessageBox.information(self, '巻数指定', '先に巻数を設定する書籍を選択してください。')
+            return
+        self.order_mode = True
+        self.order_candidates = candidates
+        self.order_clicks = []
+        self.order_start = self.start.value()
+        self.update_order_controls()
+        self.refresh()
+
+    def record_order_click(self, book_index):
+        if book_index not in self.order_candidates:
+            return
+        if book_index in self.order_clicks:
+            # Click again to undo this book and any later sequence numbers.
+            pos = self.order_clicks.index(book_index)
+            self.order_clicks = self.order_clicks[:pos]
+        else:
+            self.order_clicks.append(book_index)
+        self.update_order_controls()
+        self.refresh()
+
+    def undo_order(self):
+        if self.order_clicks:
+            self.order_clicks.pop()
+            self.update_order_controls()
+            self.refresh()
+
+    def cancel_order(self):
+        self.order_mode = False
+        self.order_candidates.clear()
+        self.order_clicks.clear()
+        self.update_order_controls()
+        self.refresh()
+
+    def confirm_order(self):
+        if not self.order_mode or len(self.order_clicks) != len(self.order_candidates):
+            return
+        for offset, idx in enumerate(self.order_clicks):
+            self.books[idx]['number'] = self.order_start + offset
+            self.books[idx]['configured'] = True
+        self.cancel_order()
 
     def reorder_selected(self, target_row):
         chosen = set(self.selected())
