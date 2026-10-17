@@ -241,39 +241,46 @@ class Main(
         self.event_in_db.connect(callback)
 
     def run_external_comic_sync(self, manual=False):
-        """Synchronize queued CBZ metadata with visible manual feedback."""
+        """Synchronize ComicInfo and external filenames with visible feedback."""
         if self._external_comic_sync_running or self.shutting_down:
             if manual:
-                info_dialog(self, '外部CBZ同期', '同期処理が実行中です。', show=True)
+                info_dialog(self, '外部書籍同期', '同期処理が実行中です。', show=True)
             return
         try:
             from calibre.gui2.external_book_store import (
-                pending_comic_info_sync, sync_queued_comic_info,
+                pending_comic_info_sync, pending_external_organization,
+                sync_queued_comic_info, sync_external_organization,
             )
             db = self.current_db
-            pending = pending_comic_info_sync(db.library_path)
-            if not pending and not manual:
+            if not manual and not (
+                pending_comic_info_sync(db.library_path)
+                or pending_external_organization(db.library_path)
+            ):
                 return
             self._external_comic_sync_running = True
             try:
                 done, failed = sync_queued_comic_info(db, all_registered=manual)
+                organized, rename_failed = sync_external_organization(db, all_registered=manual)
             finally:
                 self._external_comic_sync_running = False
+            failed.update({'rename-' + k: v for k, v in rename_failed.items()})
             if failed:
-                prints('External ComicInfo synchronization failed:', failed)
+                prints('External book synchronization failed:', failed)
                 if manual:
-                    error_dialog(self, '外部CBZ同期失敗',
-                        f'成功: {len(done)}冊、失敗: {len(failed)}冊',
+                    error_dialog(self, '外部書籍同期失敗',
+                        f'ComicInfo同期: {len(done)}冊、名前更新: {len(organized)}冊、失敗: {len(failed)}件',
                         det_msg='\\n'.join(f'{k}: {v}' for k, v in failed.items()),
                         show=True)
             elif manual:
-                info_dialog(self, '外部CBZ同期', f'{len(done)}冊の外部CBZを再同期し、書き込み内容を検証しました。', show=True)
+                info_dialog(self, '外部書籍同期',
+                    f'{len(done)}冊のComicInfo.xmlと{len(organized)}冊の保存先を確認・更新しました。',
+                    show=True)
         except Exception:
             import traceback
             details = traceback.format_exc()
             prints(details)
             if manual:
-                error_dialog(self, '外部CBZ同期失敗', '同期処理中にエラーが発生しました。', det_msg=details, show=True)
+                error_dialog(self, '外部書籍同期失敗', '同期処理中にエラーが発生しました。', det_msg=details, show=True)
 
     def remove_db_listener(self, callback):
         self.event_in_db.disconnect(callback)
@@ -1449,32 +1456,34 @@ class Main(
         open_url(QUrl(localize_website_link('https://calibre-ebook.com/donate')))
 
     def sync_external_comic_info_before_quit(self):
-        """Finish pending ComicInfo updates before leaving the GUI.
-
-        On failure the user explicitly chooses whether to cancel quitting or
-        leave unsynchronized changes queued for the next launch.
-        """
+        """Complete queued content and filename updates before quitting."""
         try:
             from calibre.gui2.external_book_store import (
-                pending_comic_info_sync, sync_queued_comic_info,
+                pending_comic_info_sync, pending_external_organization,
+                sync_queued_comic_info, sync_external_organization,
             )
             db = self.current_db
-            outstanding = pending_comic_info_sync(db.library_path)
-            if not outstanding:
+            if not (pending_comic_info_sync(db.library_path)
+                    or pending_external_organization(db.library_path)):
                 return True
             if self._external_comic_sync_running:
-                raise RuntimeError('ComicInfo synchronization is already running')
+                raise RuntimeError('外部書籍の同期処理が実行中です')
             self._external_comic_sync_running = True
             try:
                 _done, failed = sync_queued_comic_info(db)
+                _organized, rename_failed = sync_external_organization(db)
             finally:
                 self._external_comic_sync_running = False
-            outstanding = pending_comic_info_sync(db.library_path)
-            if not outstanding and not failed:
+            outstanding = (
+                set(pending_comic_info_sync(db.library_path))
+                | set(pending_external_organization(db.library_path))
+            )
+            if not outstanding and not failed and not rename_failed:
                 return True
-            details = '\\n'.join(f'{key}: {value}' for key, value in failed.items())
+            failures = {**failed, **{'rename-' + k: v for k, v in rename_failed.items()}}
+            details = '\\n'.join(f'{key}: {value}' for key, value in failures.items())
             explanation = (
-                f'{len(outstanding)}冊のCBZのComicInfo.xmlを同期できませんでした。'
+                f'{len(outstanding)}冊の外部書籍を同期できませんでした。'
                 '\\n同期されていない変更は次回起動まで記録されます。'
                 '\\nそれでも終了しますか？'
             )
@@ -1482,12 +1491,12 @@ class Main(
             import traceback
             details = traceback.format_exc()
             explanation = (
-                '外部CBZの終了時同期に失敗しました。'
+                '外部書籍の終了時同期に失敗しました。'
                 '\\n未同期の変更が残っている可能性があります。'
                 '\\nそれでも終了しますか？'
             )
         dialog = QMessageBox(self)
-        dialog.setWindowTitle('外部CBZの同期未完了')
+        dialog.setWindowTitle('外部書籍の同期未完了')
         dialog.setIcon(QMessageBox.Icon.Warning)
         dialog.setText(explanation)
         dialog.setDetailedText(details)
