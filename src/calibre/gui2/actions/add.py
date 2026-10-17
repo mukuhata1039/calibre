@@ -644,19 +644,67 @@ class AddAction(InterfaceAction):
         if not paths:
             return
         metadata_overrides = None
-        # Pre-import metadata editor is only used when adding local books to
-        # the library. Device uploads retain the normal upstream behaviour.
         if not to_device and not delete_after_add:
             from calibre.gui2.dialogs.preadd_group import preadd_group_dialog
-            metadata_overrides = preadd_group_dialog(paths, self.gui)
+            from calibre.gui2 import gprefs
+            default_library = os.path.abspath(self.gui.current_db.library_path)
+            known = [default_library]
+            for candidate in gprefs.get('library_usage_stats', {}):
+                candidate = os.path.abspath(candidate)
+                if candidate not in known and os.path.isfile(os.path.join(candidate, 'metadata.db')):
+                    known.append(candidate)
+            metadata_overrides = preadd_group_dialog(
+                paths, self.gui, library_paths=known, default_library=default_library
+            )
             if metadata_overrides is None:
                 return
-        from calibre.gui2.add import Adder
+            groups = {}
+            for path in paths:
+                key = os.path.normcase(os.path.abspath(path))
+                override = metadata_overrides.get(key, {})
+                library = override.get('library_path') or default_library
+                if library not in known:
+                    return error_dialog(self.gui, '登録先が無効', '選択されたライブラリが見つかりません。', show=True)
+                groups.setdefault(library, []).append(path)
+            from calibre.gui2.add import Adder
+            from calibre.db.legacy import LibraryDatabase
+            # Keep external database handles alive until their Adder finishes.
+            for library, group_paths in groups.items():
+                subset = {
+                    os.path.normcase(os.path.abspath(path)): metadata_overrides.get(os.path.normcase(os.path.abspath(path)), {})
+                    for path in group_paths
+                }
+                if library == default_library:
+                    Adder(
+                        group_paths, metadata_overrides=subset, db=self.gui.current_db,
+                        parent=self.gui,
+                        callback=partial(self._files_added, on_card=on_card, delete_after_add=delete_after_add),
+                        pool=self.gui.spare_pool(),
+                    )
+                else:
+                    try:
+                        db = LibraryDatabase(library)
+                    except Exception as err:
+                        error_dialog(self.gui, 'ライブラリを開けません', str(err), show=True)
+                        continue
 
+                    def external_finished(adder, database=db, name=library):
+                        try:
+                            self.gui.status_bar.show_message(
+                                f'{os.path.basename(name)}: {adder.number_of_books_added}冊登録', 5000
+                            )
+                        finally:
+                            database.close()
+
+                    Adder(
+                        group_paths, metadata_overrides=subset, db=db,
+                        parent=self.gui, callback=external_finished,
+                        pool=self.gui.spare_pool(),
+                    )
+            return
+        from calibre.gui2.add import Adder
         Adder(
-            paths,
-            metadata_overrides=metadata_overrides,
-            db=None if to_device else self.gui.current_db,
+            paths, db=None if to_device else self.gui.current_db,
             parent=self.gui,
             callback=partial(self._files_added, on_card=on_card, delete_after_add=delete_after_add),
             pool=self.gui.spare_pool(),
