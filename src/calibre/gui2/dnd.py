@@ -207,6 +207,9 @@ def dnd_has_extension(md, extensions, allow_all_extensions=False, allow_remote=F
         return True
     urls = urls_from_md(md)
     paths = [path_from_qurl(u, allow_remote=allow_remote) for u in urls]
+    # Allow directories in the book-import drop area. Exclude image-only drops.
+    if 'epub' in extensions and any(os.path.isdir(p) for p in paths if p):
+        return True
     exts = frozenset(filter(None, (extension(u) for u in paths if u)))
     if DEBUG:
         repr_urls = [bytes(u.toEncoded()).decode('utf-8') for u in urls]
@@ -306,7 +309,12 @@ def dnd_get_files(md, exts, allow_all_extensions=False, filter_exts=()):
             return True
         return ext in exts and ext not in filter_exts
 
-    local_files = [p for p in local_files if is_ok(unquote(p))]
+    local_files = [
+        p for p in local_files
+        if is_ok(unquote(p)) or (
+            'epub' in exts and not filter_exts and os.path.isdir(p)
+        )
+    ]
     local_files = [x for x in local_files if os.path.exists(x)]
     if local_files:
         return local_files, None
