@@ -481,6 +481,8 @@ class Adder(QObject):
             if overrides is not None:
                 break
         if overrides:
+            if overrides.get('title'):
+                mi.title = overrides['title']
             if overrides.get('series'):
                 mi.series = overrides['series']
             if overrides.get('series_index') is not None and overrides.get('series'):
