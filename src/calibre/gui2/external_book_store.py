@@ -271,6 +271,48 @@ def queue_comic_info_sync(library_path, book_id):
     return True
 
 
+def queue_external_organization(library_path, book_id):
+    """Persist a rename request for any externally registered book format."""
+    data = load_manifest(library_path)
+    key = str(int(book_id))
+    if not data.get('books', {}).get(key):
+        return False
+    pending = data.setdefault('pending_organization', [])
+    if key not in pending:
+        pending.append(key)
+        save_manifest(library_path, data)
+    return True
+
+
+def pending_external_organization(library_path):
+    return tuple(load_manifest(library_path).get('pending_organization', ()))
+
+
+def sync_external_organization(db, all_registered=False):
+    """Apply current metadata naming to all registered formats, preserving failures."""
+    library = db.library_path
+    data = load_manifest(library)
+    targets = (list(data.get('books', {})) if all_registered
+               else list(data.get('pending_organization', ())))
+    done, failed = [], {}
+    for key in targets:
+        try:
+            fmts = load_manifest(library).get('books', {}).get(key, {})
+            mi = db.new_api.get_metadata(int(key))
+            for fmt in tuple(fmts):
+                organize_external_format(db, int(key), fmt, metadata=mi)
+            done.append(key)
+        except Exception as err:
+            failed[key] = str(err)
+    if done:
+        latest = load_manifest(library)
+        latest['pending_organization'] = [
+            key for key in latest.get('pending_organization', ()) if key not in done
+        ]
+        save_manifest(library, latest)
+    return done, failed
+
+
 def pending_comic_info_sync(library_path):
     return tuple(load_manifest(library_path).get('pending_comicinfo', ()))
 
