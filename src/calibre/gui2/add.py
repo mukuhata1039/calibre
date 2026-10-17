@@ -713,7 +713,7 @@ class Adder(QObject):
         from calibre.gui2.ui import get_gui
 
         g = get_gui()
-        if gprefs['manual_add_auto_convert'] and potentially_convertible and g is not None:
+        if gprefs['manual_add_auto_convert'] and potentially_convertible and g is not None and self.dbref is not None and self.dbref() is g.current_db:
             g.iactions['Convert Books'].auto_convert_auto_add(potentially_convertible)
 
         try:
