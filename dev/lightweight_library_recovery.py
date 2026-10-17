@@ -129,6 +129,21 @@ def reconnect_from_original_tree(library, source, ids=None):
         raise ValueError('復元先のmetadata.dbがありません')
     if not os.path.isdir(source):
         raise FileNotFoundError(source)
+    from calibre.gui2.external_book_store import read_comic_info, comic_identity
+    # Build a one-to-one fallback index for CBZs whose calibre folder moved.
+    cbz_candidates = {}
+    for base, dirs, names in os.walk(source, followlinks=False):
+        dirs[:] = [n for n in dirs if not os.path.islink(os.path.join(base, n))]
+        for name in names:
+            if not name.lower().endswith('.cbz'):
+                continue
+            candidate = os.path.join(base, name)
+            try:
+                identity = comic_identity(read_comic_info(candidate))
+                if identity[0] and identity[2]:
+                    cbz_candidates.setdefault(identity, []).append(candidate)
+            except Exception:
+                continue
     db = LibraryDatabase(library)
     outcomes = []
     try:
@@ -152,11 +167,24 @@ def reconnect_from_original_tree(library, source, ids=None):
                     if os.path.commonpath([root, folder]) != root:
                         raise ValueError('書籍フォルダの場所が不正です')
                     choices = [p for p in os.scandir(folder) if p.is_file() and p.name.lower().endswith(ext)]
-                    if len(choices) != 1:
+                    if len(choices) != 1 and str(fmt).upper() == 'CBZ':
+                        meta = cache.get_metadata(book_id)
+                        identity = comic_identity({
+                            'Title': meta.title, 'Series': meta.series,
+                            'Number': str(meta.series_index) if meta.series else '',
+                        })
+                        fallback = cbz_candidates.get(identity, ())
+                        if len(fallback) == 1:
+                            candidates = fallback
+                        else:
+                            candidates = ()
+                    else:
+                        candidates = [item.path for item in choices]
+                    if len(candidates) != 1:
                         outcomes.append([book_id, fmt, 'missing-or-ambiguous'])
                         continue
                     # Use calibre's format API so the database remains consistent.
-                    cache.add_format(book_id, str(fmt).upper(), choices[0].path, replace=True)
+                    cache.add_format(book_id, str(fmt).upper(), candidates[0], replace=True)
                     outcomes.append([book_id, fmt, 'attached'])
             except Exception as err:
                 outcomes.append([book_id, '', 'error: ' + str(err)])
