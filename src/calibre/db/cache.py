@@ -2040,7 +2040,7 @@ class Cache:
             self._mark_as_dirty(dirtied)
             self._clear_link_map_cache(dirtied)
             self.event_dispatcher(EventType.metadata_changed, name, dirtied)
-            if name in {'title', 'authors', 'series', 'series_index', 'publisher', 'tags'}:
+            if name in {'title', 'authors', 'series', 'series_index', 'publisher', 'tags', '#subtitle'}:
                 from calibre.gui2.internal_comic_sync import queue
                 queue(self.backend.library_path, dirtied, name)
         return dirtied
