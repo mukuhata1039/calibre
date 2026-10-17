@@ -75,7 +75,7 @@ def backup_library(library, outfile):
                 for name in files:
                     original = os.path.join(current, name)
                     rel = os.path.relpath(original, library).replace(os.sep, '/')
-                    if rel == 'metadata.db' or rel == MANIFEST:
+                    if rel in ('metadata.db', MANIFEST, 'external-books.json'):
                         continue
                     # Keep only database/metadata/config/cover files, not formats.
                     if Path(name).suffix.lower() in EXCLUDED:
@@ -94,6 +94,9 @@ def restore_library(archive, destination):
     if os.path.exists(destination) and os.listdir(destination):
         raise ValueError('復元先は空フォルダにしてください。既存のライブラリを上書きしません')
     with zipfile.ZipFile(archive) as z:
+        bad_member = z.testzip()
+        if bad_member is not None:
+            raise ValueError('バックアップZIPが破損しています: ' + bad_member)
         manifest = json.loads(z.read(MANIFEST))
         if manifest.get('version') != 1 or not manifest.get('books_excluded'):
             raise ValueError('対応する軽量バックアップではありません')
