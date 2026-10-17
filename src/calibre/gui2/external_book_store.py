@@ -304,6 +304,10 @@ def sync_queued_comic_info(db, all_registered=False):
                 'Tags': ', '.join(mi.tags or ()),
             }
             write_comic_info(path, changes)
+            actual = read_comic_info(path)
+            mismatched = [field for field, value in changes.items() if actual.get(field, '') != str(value or '').strip()]
+            if mismatched:
+                raise ValueError('ComicInfo verification failed for fields: ' + ', '.join(mismatched))
             successful.append(key)
         except Exception as err:
             failures[key] = str(err)
