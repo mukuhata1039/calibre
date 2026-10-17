@@ -290,9 +290,14 @@ class Main(
         # manifest; run in a worker so large CBZs never freeze the GUI.
         self._external_comic_sync_running = False
         self._external_comic_sync_timer = QTimer(self)
-        self._external_comic_sync_timer.setInterval(180000)
+        self._external_comic_sync_timer.setInterval(30000)
         self._external_comic_sync_timer.timeout.connect(self.run_external_comic_sync)
         self._external_comic_sync_timer.start()
+        self._external_comic_sync_now = QAction('外部CBZを今すぐ同期', self)
+        self._external_comic_sync_now.triggered.connect(self.run_external_comic_sync)
+        self.addAction(self._external_comic_sync_now)
+        self._external_comic_sync_now.setShortcut('Ctrl+Alt+Shift+S')
+        self._external_comic_sync_now.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
 
         for ac in self.iactions.values():
             try:
