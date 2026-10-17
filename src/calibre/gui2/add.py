@@ -619,6 +619,15 @@ class Adder(QObject):
                     os.path.normcase(os.path.abspath(source_path))
                 )
                 if override is not None:
+                    subtitle = (override.get('subtitle') or '').strip()
+                    if subtitle and 'subtitle' in set(override.get('import_fields') or ()):
+                        try:
+                            db_inst.new_api.set_field('#subtitle', {book_id: subtitle})
+                        except Exception:
+                            self.report.append(
+                                'Could not store subtitle (create #subtitle custom text column) for '
+                                + mi.title + ': ' + traceback.format_exc()
+                            )
                     roman = (override.get('series_roman') or '').strip()
                     if roman:
                         try:
