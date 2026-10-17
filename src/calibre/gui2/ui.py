@@ -1405,19 +1405,27 @@ class Main(
 
         open_url(QUrl(localize_website_link('https://calibre-ebook.com/donate')))
 
-    def flush_internal_comic_info(self):
-        from calibre.gui2.internal_comic_sync import flush
+    def flush_internal_comic_info(self, wait_for_completion=False):
+        from calibre.gui2.internal_comic_sync import flush, poll
         try:
             db = self.current_db.new_api
-            done, failed = flush(db)
+            done, failed = (flush(db) if wait_for_completion else poll(db))
             if failed:
                 prints('Internal CBZ ComicInfo sync failed:', failed)
+            return not failed
         except Exception:
             import traceback
             prints(traceback.format_exc())
+            return False
 
     def confirm_quit(self):
-        self.flush_internal_comic_info()
+        self._internal_comic_timer.stop()
+        if not self.flush_internal_comic_info(wait_for_completion=True):
+            from calibre.gui2 import question_dialog
+            if not question_dialog(self, 'ComicInfo同期失敗',
+                                   '一部のCBZのメタデータを同期できませんでした。それでも終了しますか？'):
+                self._internal_comic_timer.start()
+                return False
         if self.job_manager.has_jobs():
             msg = _('There are active jobs. Are you sure you want to quit?')
             if self.job_manager.has_device_jobs():
