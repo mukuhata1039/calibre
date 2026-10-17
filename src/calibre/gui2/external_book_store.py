@@ -196,3 +196,63 @@ def resolve_external_format(library_path, book_id, fmt):
         return None
     target = _safe_external_path(data['storage_root'], relpath)
     return target if os.path.isfile(target) else None
+
+
+def _quarantine_path(library_path, book_id, fmt):
+    """Backup outside calibre's book folders, retaining original filename."""
+    return os.path.join(
+        os.path.abspath(library_path), '.external-format-test-backup',
+        str(int(book_id)), str(fmt).upper() + '.json'
+    )
+
+
+def stage_external_format_test(db, book_id, fmt):
+    """Move ONE internal format to a reversible quarantine for external-read testing.
+
+    The external format must already be registered and readable. This is a
+    test-only action; the calibre database and format entry are unchanged.
+    """
+    library_path = os.path.abspath(db.library_path)
+    fmt = str(fmt).upper().lstrip('.')
+    external = resolve_external_format(library_path, book_id, fmt)
+    if not external:
+        raise FileNotFoundError('External format is missing: ' + fmt)
+    original = db.new_api.format_abspath(int(book_id), fmt)
+    if not original:
+        raise FileNotFoundError('Internal book format not found')
+    if os.path.normcase(os.path.realpath(original)) == os.path.normcase(os.path.realpath(external)):
+        raise ValueError('Internal and external files resolve to the same path')
+    import json
+    metadata = _quarantine_path(library_path, book_id, fmt)
+    if os.path.exists(metadata):
+        raise FileExistsError('An unfinished external-format test already exists')
+    backup = metadata[:-5] + '.original'
+    os.makedirs(os.path.dirname(metadata), exist_ok=True)
+    if os.path.exists(backup):
+        raise FileExistsError(backup)
+    # Keep the original in the library volume so moving usually stays atomic.
+    os.replace(original, backup)
+    try:
+        record = {'original': original, 'backup': backup, 'external': external}
+        with open(metadata, 'x', encoding='utf-8') as f:
+            json.dump(record, f, ensure_ascii=False)
+    except Exception:
+        os.replace(backup, original)
+        raise
+    return external
+
+
+def restore_external_format_test(library_path, book_id, fmt):
+    """Restore the original format from quarantine; never overwrite another file."""
+    import json
+    metadata = _quarantine_path(library_path, book_id, fmt)
+    with open(metadata, encoding='utf-8') as f:
+        record = json.load(f)
+    original, backup = record['original'], record['backup']
+    if os.path.exists(original):
+        raise FileExistsError('Original path is occupied: ' + original)
+    if not os.path.isfile(backup):
+        raise FileNotFoundError(backup)
+    os.replace(backup, original)
+    os.unlink(metadata)
+    return original
