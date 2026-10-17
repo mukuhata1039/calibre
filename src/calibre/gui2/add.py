@@ -670,43 +670,6 @@ class Adder(QObject):
                 if db.add_format(book_id, fmt, path, run_hooks=False, replace=replace):
                     run_plugins_on_postimport(dbref(), book_id, fmt)
                     fmt_map[fmt.lower()] = path
-                    override = self.metadata_overrides.get(
-                        os.path.normcase(os.path.abspath(path)), {}
-                    )
-                    store = override.get('external_mirror_root')
-                    if store:
-                        try:
-                            from calibre.gui2.external_book_store import (
-                                copy_to_store, load_manifest, register_external_format,
-                                set_storage_root, set_storage_templates, organize_external_format,
-                                stage_external_format_test,
-                            )
-                            library_path = dbref().library_path
-                            current = load_manifest(library_path).get('storage_root')
-                            if current and os.path.normcase(current) != os.path.normcase(store):
-                                raise ValueError('External storage root differs from the existing library configuration')
-                            set_storage_root(library_path, store)
-                            set_storage_templates(library_path,
-                                override['external_folder_template'], override['external_file_template'])
-                            # Stable by calibre book ID; never overwrite a prior mirror.
-                            relative = os.path.join(str(book_id), 'book.' + str(fmt).lower())
-                            canonical = db.format_abspath(book_id, fmt)
-                            if not canonical:
-                                raise FileNotFoundError('Imported calibre format is missing')
-                            copy_to_store(canonical, store, relative)
-                            register_external_format(library_path, book_id, fmt, relative)
-                            organize_external_format(dbref(), book_id, fmt)
-                            # Drop the internal duplicate only after a verified external copy.
-                            # The internal original stays in reversible quarantine.
-                            stage_external_format_test(dbref(), book_id, fmt)
-                            if fmt.lower() == 'cbz':
-                                from calibre.gui2.external_book_store import queue_comic_info_sync
-                                queue_comic_info_sync(library_path, book_id)
-                        except Exception:
-                            self.report.append(
-                                'External mirror was not completed for ' + mi.title
-                                + ': ' + traceback.format_exc()
-                            )
             except Exception:
                 a = self.report.append
                 a(''), a('-' * 70)
