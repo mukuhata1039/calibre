@@ -272,6 +272,8 @@ class PreAddPreview(QDialog):
         event.acceptProposedAction()
 
     def append(self, paths):
+        from calibre.gui2.dialogs.preadd_group_metadata import expand_book_paths
+        paths = expand_book_paths(paths)
         seen = {os.path.normcase(x['path']) for x in self.books}
         for path in paths:
             path = os.path.abspath(path)
