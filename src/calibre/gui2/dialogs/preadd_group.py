@@ -139,6 +139,18 @@ class PreAddPreview(QDialog):
         self.title.setToolTip('{series} シリーズ名 / {series_index} または {index} 巻数 / {title} 元のタイトル / {authors} 著者')
         title_row.addWidget(self.title)
         root.addLayout(title_row)
+        title_tools = QHBoxLayout()
+        title_tools.addWidget(QLabel('タイトルの変数を挿入'))
+        for caption, token in (('シリーズ名', '{series}'), ('巻数', '{series_index}'), ('巻数2桁', '{series_index:02}'), ('元タイトル', '{title}'), ('著者', '{authors}')):
+            button = QPushButton(caption)
+            button.clicked.connect(lambda checked=False, value=token: self.title.insert(value))
+            title_tools.addWidget(button)
+        title_tools.addStretch()
+        root.addLayout(title_tools)
+        self.title_preview = QLabel('プレビュー: タイトルを入力してください')
+        self.title_preview.setWordWrap(True)
+        root.addWidget(self.title_preview)
+        self.title.textChanged.connect(self.update_title_preview)
 
         filename_row = QHBoxLayout()
         filename_row.addWidget(QLabel('ファイル名（文字を選択して Ctrl+C でコピー）'))
@@ -346,6 +358,7 @@ class PreAddPreview(QDialog):
         book = self.books[entry.data(Qt.ItemDataRole.UserRole)]
         # Title is manual-only: clicking a book must not populate the edit field.
         self.title.clear()
+        self.update_title_preview()
         self.series.setText(book.get('series', ''))
         self.series_reading.setText(book.get('series_reading', ''))
         self.series_roman.setText(book.get('series_roman', ''))
@@ -360,6 +373,24 @@ class PreAddPreview(QDialog):
             self.add_author_field()
         for idx, field in enumerate(self.author_inputs):
             field.setText(names[idx] if idx < len(names) else '')
+
+    def update_title_preview(self, *_):
+        pattern = self.title.text().strip()
+        if not pattern:
+            self.title_preview.setText('プレビュー: タイトルを入力してください')
+            return
+        indices = self.selected()
+        if not indices:
+            indices = [self.table.item(0, 0).data(Qt.ItemDataRole.UserRole)] if self.table.rowCount() else []
+        if not indices:
+            self.title_preview.setText('プレビュー: 書籍を追加してください')
+            return
+        try:
+            examples = [self.render_title_template(pattern, self.books[i]) for i in indices[:3]]
+            extra = f'　ほか{len(indices)-3}冊' if len(indices) > 3 else ''
+            self.title_preview.setText('プレビュー: ' + ' ／ '.join(examples) + extra)
+        except (ValueError, KeyError, IndexError, AttributeError) as err:
+            self.title_preview.setText('書式エラー: ' + str(err))
 
     def copy_filename(self, with_extension=True):
         name = self.filename_text.text()
@@ -450,6 +481,7 @@ class PreAddPreview(QDialog):
                         item.setForeground(QColor('#aeb4bd'))
                 self.table.setItem(row, col, item)
         self.table.blockSignals(False)
+        self.update_title_preview()
         if self.order_mode:
             self.table.clearSelection()
 
