@@ -7,6 +7,7 @@ from copy import deepcopy
 import os
 import re
 import sys
+from string import Formatter
 
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
@@ -134,6 +135,8 @@ class PreAddPreview(QDialog):
         title_row = QHBoxLayout()
         title_row.addWidget(QLabel('タイトル'))
         self.title = QLineEdit()
+        self.title.setPlaceholderText('例: {series} 第{series_index:02}巻 （{index}も使用可）')
+        self.title.setToolTip('{series} シリーズ名 / {series_index} または {index} 巻数 / {title} 元のタイトル / {authors} 著者')
         title_row.addWidget(self.title)
         root.addLayout(title_row)
 
@@ -484,14 +487,42 @@ class PreAddPreview(QDialog):
                 self.undo_stack.pop(0)
             self.restore(self.redo_stack.pop())
 
+    def render_title_template(self, pattern, book):
+        # Only explicitly supported fields are accepted; no attribute traversal.
+        fields = {
+            'series': book.get('series') or '',
+            'series_index': book.get('number') if book.get('number') is not None else '',
+            'index': book.get('number') if book.get('number') is not None else '',
+            'title': book.get('title') or '',
+            'authors': book.get('author') or '',
+        }
+        for _, field, spec, conversion in Formatter().parse(pattern):
+            if field is None:
+                continue
+            if field not in fields or conversion is not None or '{' in spec or '}' in spec:
+                raise ValueError('未対応の変数です: {' + field + '}')
+        return pattern.format_map(fields).strip()
+
     def apply(self):
         if not self.selected():
             return
-        self.save_undo()
         targets = self.selected()
+        title_pattern = self.title.text().strip()
+        titles = {}
+        if title_pattern:
+            try:
+                for i in targets:
+                    # The template always uses the book's own series and index.
+                    titles[i] = self.render_title_template(title_pattern, self.books[i])
+                    if not titles[i]:
+                        raise ValueError('生成したタイトルが空白です')
+            except (ValueError, KeyError, IndexError, AttributeError) as err:
+                QMessageBox.warning(self, 'タイトル書式エラー', str(err))
+                return
+        self.save_undo()
         for i in targets:
-            if len(targets) == 1 and self.title.text().strip():
-                self.books[i]['title'] = self.title.text().strip()
+            if i in titles:
+                self.books[i]['title'] = titles[i]
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['series_reading'] = self.series_reading.text().strip()
             self.books[i]['series_roman'] = self.series_roman.text().strip()
