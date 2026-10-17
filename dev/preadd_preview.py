@@ -100,6 +100,12 @@ class PreAddPreview(QDialog):
         self.table.currentCellChanged.connect(self.show_filename)
         root.addWidget(self.table)
 
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel('タイトル'))
+        self.title = QLineEdit()
+        title_row.addWidget(self.title)
+        root.addLayout(title_row)
+
         filename_row = QHBoxLayout()
         filename_row.addWidget(QLabel('ファイル名（文字を選択して Ctrl+C でコピー）'))
         self.filename_text = QLineEdit()
@@ -197,6 +203,7 @@ class PreAddPreview(QDialog):
     def metadata_overrides(self):
         return {
             os.path.normcase(os.path.abspath(book['path'])): {
+                'title': book.get('title', ''),
                 'series': book['series'],
                 'series_index': book['number'],
                 'authors': book['author'],
@@ -227,6 +234,20 @@ class PreAddPreview(QDialog):
         item = self.table.item(row, 1)
         self.filename_text.setText(item.text() if item else '')
         self.filename_text.setCursorPosition(0)
+        entry = self.table.item(row, 0)
+        if entry is None:
+            return
+        book = self.books[entry.data(Qt.ItemDataRole.UserRole)]
+        self.title.setText(book.get('title', ''))
+        self.series.setText(book.get('series', ''))
+        self.tags.setText(book.get('tags', ''))
+        self.publisher.setText(book.get('publisher', ''))
+        self.category.setCurrentText(book.get('category', ''))
+        names = [x for x in book.get('author', '').split('×') if x]
+        while len(self.author_inputs) < max(1, len(names)):
+            self.add_author_field()
+        for idx, field in enumerate(self.author_inputs):
+            field.setText(names[idx] if idx < len(names) else '')
 
     def copy_filename(self, with_extension=True):
         name = self.filename_text.text()
@@ -261,7 +282,21 @@ class PreAddPreview(QDialog):
             name = os.path.splitext(os.path.basename(path))[0]
             m = re.search(r'(?:第\s*(\d+)\s*巻|(?:vol\.?|volume)\s*0*(\d+)|[ _（(]0*(\d{1,3})[）)]?$)', name, re.I)
             number = next((int(v) for v in m.groups() if v), None) if m else None
-            self.books.append({'path': path, 'series': '', 'number': number, 'tags': '', 'author': '', 'category': '', 'publisher': '', 'configured': False})
+            info = {}
+            try:
+                from calibre.gui2.dialogs.preadd_group_metadata import read_preview_metadata
+                info = read_preview_metadata(path)
+            except Exception as err:
+                print(f'Pre-add metadata extraction failed for {path}: {err}', file=sys.stderr)
+            self.books.append({
+                'path': path, 'title': info.get('title', ''),
+                'series': info.get('series', ''),
+                'number': info.get('number', number),
+                'tags': info.get('tags', ''),
+                'author': '×'.join(info.get('authors', [])),
+                'category': '', 'publisher': info.get('publisher', ''),
+                'configured': False
+            })
         self.save_undo()
         self.refresh()
 
@@ -336,6 +371,7 @@ class PreAddPreview(QDialog):
             return
         self.save_undo()
         for i in self.selected():
+            self.books[i]['title'] = self.title.text().strip()
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['tags'] = self.tags.text().strip()
             self.books[i]['author'] = self.author_display_name()
