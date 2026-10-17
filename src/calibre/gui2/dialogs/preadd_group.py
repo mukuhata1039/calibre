@@ -634,8 +634,6 @@ def preadd_group_dialog(paths, parent=None, library_paths=(), default_library=''
     dialog.append(paths)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
-    # No external_mirror_root override: the normal calibre importer preserves
-    # its native layout and native book-format semantics.
     return dialog.metadata_overrides()
 
 if __name__ == '__main__':
