@@ -10,7 +10,7 @@ import unittest
 import zipfile
 
 from calibre.gui2.external_book_store import (
-    comic_identity, copy_to_store, read_comic_info, write_comic_info,
+    comic_identity, copy_to_store, read_comic_info, write_comic_info,\n    set_storage_root, register_external_format, resolve_external_format,
 )
 
 
@@ -42,6 +42,25 @@ class ExternalStoreSmoke(unittest.TestCase):
             self.assertEqual(open(path, 'rb').read(), b'book')
             with self.assertRaises(FileExistsError):
                 copy_to_store(src, store, 'manga/book.cbz')
+
+    def test_manifest_resolves_external_file_and_blocks_traversal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lib = os.path.join(tmp, 'library')
+            store = os.path.join(tmp, 'store')
+            os.makedirs(lib)
+            os.makedirs(store)
+            with open(os.path.join(lib, 'metadata.db'), 'wb') as f:
+                f.write(b'test-only')
+            source = os.path.join(tmp, 'book.cbz')
+            with open(source, 'wb') as f:
+                f.write(b'test cbz')
+            set_storage_root(lib, store)
+            path = copy_to_store(source, store, 'volume/book.cbz')
+            register_external_format(lib, 42, 'cbz', 'volume/book.cbz')
+            self.assertEqual(resolve_external_format(lib, 42, 'CBZ'), path)
+            self.assertIsNone(resolve_external_format(lib, 43, 'CBZ'))
+            with self.assertRaises(ValueError):
+                register_external_format(lib, 42, 'CBZ', '../book.cbz')
 
 
 if __name__ == '__main__':
