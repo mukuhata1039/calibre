@@ -283,7 +283,11 @@ def sync_queued_comic_info(db, all_registered=False):
     """
     library_path = db.library_path
     data = load_manifest(library_path)
-    pending = (\n        [key for key, formats in data.get('books', {}).items() if 'CBZ' in formats]\n        if all_registered else list(data.get('pending_comicinfo', ()))\n    )\n    successful, failures = [], {}
+    pending = (
+        [key for key, formats in data.get('books', {}).items() if 'CBZ' in formats]
+        if all_registered else list(data.get('pending_comicinfo', ()))
+    )
+    successful, failures = [], {}
     for key in pending:
         try:
             book_id = int(key)
