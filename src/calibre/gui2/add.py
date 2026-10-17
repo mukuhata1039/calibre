@@ -670,6 +670,30 @@ class Adder(QObject):
                 if db.add_format(book_id, fmt, path, run_hooks=False, replace=replace):
                     run_plugins_on_postimport(dbref(), book_id, fmt)
                     fmt_map[fmt.lower()] = path
+                    override = self.metadata_overrides.get(
+                        os.path.normcase(os.path.abspath(path)), {}
+                    )
+                    store = override.get('external_mirror_root')
+                    if store:
+                        try:
+                            from calibre.gui2.external_book_store import (
+                                copy_to_store, load_manifest, register_external_format,
+                                set_storage_root,
+                            )
+                            library_path = dbref().library_path
+                            current = load_manifest(library_path).get('storage_root')
+                            if current and os.path.normcase(current) != os.path.normcase(store):
+                                raise ValueError('External storage root differs from the existing library configuration')
+                            set_storage_root(library_path, store)
+                            # Stable by calibre book ID; never overwrite a prior mirror.
+                            relative = os.path.join(str(book_id), str(fmt).lower() + '.' + str(fmt).lower())
+                            copy_to_store(path, store, relative)
+                            register_external_format(library_path, book_id, fmt, relative)
+                        except Exception:
+                            self.report.append(
+                                'External mirror was not completed for ' + mi.title
+                                + ': ' + traceback.format_exc()
+                            )
             except Exception:
                 a = self.report.append
                 a(''), a('-' * 70)
