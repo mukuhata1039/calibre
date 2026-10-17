@@ -106,6 +106,26 @@ class PreAddPreview(QDialog):
         self.table.currentCellChanged.connect(self.show_filename)
         root.addWidget(self.table)
 
+        self.import_fields = {}
+        field_labels = [
+            ('title', 'タイトル'), ('authors', '著者'), ('series', 'シリーズ'),
+            ('series_index', '巻数'), ('publisher', '出版社'),
+            ('tags', '元ファイルのタグ'), ('cover', '表紙'),
+            ('pubdate', '出版日'), ('comments', 'あらすじ'), ('identifiers', '識別子'),
+        ]
+        field_row = QHBoxLayout()
+        field_row.addWidget(QLabel('登録する情報'))
+        active_fields = gprefs.get('preadd_import_fields', None)
+        if active_fields is None:
+            active_fields = ['title', 'authors', 'series', 'series_index', 'publisher', 'cover']
+        for key, label in field_labels:
+            control = QCheckBox(label)
+            control.setChecked(key in active_fields)
+            control.toggled.connect(self.persist_import_fields)
+            self.import_fields[key] = control
+            field_row.addWidget(control)
+        root.addLayout(field_row)
+
         title_row = QHBoxLayout()
         title_row.addWidget(QLabel('タイトル'))
         self.title = QLineEdit()
@@ -237,6 +257,11 @@ class PreAddPreview(QDialog):
                 if destination is not None:
                     destination.setText(os.path.basename(os.path.normpath(library)))
 
+    def persist_import_fields(self, *_):
+        gprefs['preadd_import_fields'] = [
+            name for name, checkbox in self.import_fields.items() if checkbox.isChecked()
+        ]
+
     def metadata_overrides(self):
         return {
             os.path.normcase(os.path.abspath(book['path'])): {
@@ -247,6 +272,7 @@ class PreAddPreview(QDialog):
                 'publisher': book['publisher'],
                 'library_path': book['category'],
                 'tags': book['tags'],
+                'import_fields': [name for name, control in self.import_fields.items() if control.isChecked()],
             }
             for book in self.books
         }
