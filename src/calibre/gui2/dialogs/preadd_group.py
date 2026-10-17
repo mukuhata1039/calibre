@@ -205,6 +205,12 @@ class PreAddPreview(QDialog):
         self.click_order_button = QPushButton('クリック順で巻数指定')
         self.click_order_button.clicked.connect(self.begin_order_mode)
         row.addWidget(self.click_order_button)
+        top_button = QPushButton('▲ 最上部へ')
+        top_button.clicked.connect(lambda: self.move_selected_to_edge(True))
+        row.addWidget(top_button)
+        bottom_button = QPushButton('▼ 最下部へ')
+        bottom_button.clicked.connect(lambda: self.move_selected_to_edge(False))
+        row.addWidget(bottom_button)
         row.addStretch()
         root.addLayout(row)
 
@@ -494,6 +500,38 @@ class PreAddPreview(QDialog):
             self.books[i]['publisher'] = self.publisher.text().strip()
             self.books[i]['configured'] = True
         self.refresh()
+
+    def move_selected_to_edge(self, to_top):
+        if self.order_mode:
+            return
+        selection = set(self.selected())
+        if not selection:
+            return
+        # Keep the relative ordering of both the selected and unselected books.
+        old_order = list(range(len(self.books)))
+        chosen = [i for i in old_order if i in selection]
+        others = [i for i in old_order if i not in selection]
+        new_order = (chosen + others) if to_top else (others + chosen)
+        if new_order == old_order:
+            return
+        self.save_undo()
+        remap = {old_index: new_index for new_index, old_index in enumerate(new_order)}
+        self.books = [self.books[i] for i in new_order]
+        self.order_candidates = {remap[i] for i in self.order_candidates}
+        self.order_clicks = [remap[i] for i in self.order_clicks]
+        self.refresh()
+        # Preserve the moved selection so the user can immediately move it again.
+        self.table.blockSignals(True)
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is not None and item.data(Qt.ItemDataRole.UserRole) in {
+                remap[i] for i in selection
+            }:
+                self.table.selectRow(row) if len(selection) == 1 else self.table.setRangeSelected(
+                    QTableWidgetSelectionRange(row, 0, row, self.table.columnCount() - 1), True
+                )
+        self.table.blockSignals(False)
 
     def number(self):
         if not self.selected():
