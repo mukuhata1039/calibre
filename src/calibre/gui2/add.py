@@ -678,13 +678,16 @@ class Adder(QObject):
                         try:
                             from calibre.gui2.external_book_store import (
                                 copy_to_store, load_manifest, register_external_format,
-                                set_storage_root,
+                                set_storage_root, set_storage_templates, organize_external_format,
+                                stage_external_format_test,
                             )
                             library_path = dbref().library_path
                             current = load_manifest(library_path).get('storage_root')
                             if current and os.path.normcase(current) != os.path.normcase(store):
                                 raise ValueError('External storage root differs from the existing library configuration')
                             set_storage_root(library_path, store)
+                            set_storage_templates(library_path,
+                                override['external_folder_template'], override['external_file_template'])
                             # Stable by calibre book ID; never overwrite a prior mirror.
                             relative = os.path.join(str(book_id), 'book.' + str(fmt).lower())
                             canonical = db.format_abspath(book_id, fmt)
@@ -692,8 +695,10 @@ class Adder(QObject):
                                 raise FileNotFoundError('Imported calibre format is missing')
                             copy_to_store(canonical, store, relative)
                             register_external_format(library_path, book_id, fmt, relative)
-                            from calibre.gui2.external_book_store import organize_external_format
                             organize_external_format(dbref(), book_id, fmt)
+                            # Drop the internal duplicate only after a verified external copy.
+                            # The internal original stays in reversible quarantine.
+                            stage_external_format_test(dbref(), book_id, fmt)
                             if fmt.lower() == 'cbz':
                                 from calibre.gui2.external_book_store import queue_comic_info_sync
                                 queue_comic_info_sync(library_path, book_id)
