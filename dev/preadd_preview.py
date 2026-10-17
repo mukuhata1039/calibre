@@ -162,7 +162,28 @@ class PreAddPreview(QDialog):
         export.clicked.connect(self.export)
         row.addWidget(export)
         root.addLayout(row)
+        actions = QHBoxLayout()
+        self.cancel_import = QPushButton('登録をキャンセル')
+        self.cancel_import.clicked.connect(self.reject)
+        actions.addWidget(self.cancel_import)
+        self.confirm_import = QPushButton('この設定でライブラリに登録')
+        self.confirm_import.clicked.connect(self.accept)
+        actions.addWidget(self.confirm_import)
+        root.addLayout(actions)
         self.setAcceptDrops(True)
+
+    def metadata_overrides(self):
+        return {
+            os.path.normcase(os.path.abspath(book['path'])): {
+                'series': book['series'],
+                'series_index': book['number'],
+                'authors': book['author'],
+                'publisher': book['publisher'],
+                'category': book['category'],
+                'tags': book['tags'],
+            }
+            for book in self.books
+        }
 
     def add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
