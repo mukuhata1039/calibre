@@ -10,7 +10,7 @@ import sys
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QComboBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence, QWidget,
 )
 
  
@@ -125,8 +125,15 @@ class PreAddPreview(QDialog):
 
         details = QHBoxLayout()
         details.addWidget(QLabel('著者名'))
-        self.author = QLineEdit()
-        details.addWidget(self.author)
+        self.author_inputs = []
+        self.author_container = QWidget()
+        self.author_layout = QVBoxLayout(self.author_container)
+        self.author_layout.setContentsMargins(0, 0, 0, 0)
+        self.add_author_field()
+        details.addWidget(self.author_container)
+        add_author_button = QPushButton('＋ 著者を追加')
+        add_author_button.clicked.connect(self.add_author_field)
+        details.addWidget(add_author_button)
         details.addWidget(QLabel('作品区分'))
         self.category = QComboBox()
         self.category.setEditable(True)
@@ -199,6 +206,19 @@ class PreAddPreview(QDialog):
             }
             for book in self.books
         }
+
+    def add_author_field(self):
+        field = QLineEdit()
+        field.setPlaceholderText(f'著者 {len(self.author_inputs) + 1}')
+        self.author_layout.addWidget(field)
+        self.author_inputs.append(field)
+        return field
+
+    def author_display_name(self):
+        return '×'.join(
+            field.text().strip()
+            for field in self.author_inputs if field.text().strip()
+        )
 
     def show_filename(self, row, column, previous_row=None, previous_column=None):
         if row < 0:
@@ -318,7 +338,7 @@ class PreAddPreview(QDialog):
         for i in self.selected():
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['tags'] = self.tags.text().strip()
-            self.books[i]['author'] = self.author.text().strip()
+            self.books[i]['author'] = self.author_display_name()
             self.books[i]['category'] = self.category.currentText().strip()
             self.books[i]['publisher'] = self.publisher.text().strip()
             self.books[i]['configured'] = True
