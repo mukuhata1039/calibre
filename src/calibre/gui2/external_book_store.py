@@ -431,3 +431,40 @@ def migrate_existing_cbz(db, book_id, storage_root):
     ensure_external_cbz_mirror(db, book_id, storage_root)
     migrate_book_cbz_to_external(db, book_id)
     return 'migrated'
+
+
+def finalize_deleted_external_books(library_path, book_ids, remove_files=False):
+    """Prune orphan manifest entries after calibre confirms record deletion.
+
+    If requested, move archived files to an external recycle directory, not
+    permanent deletion. Failed moves keep manifest references for recovery.
+    """
+    data = load_manifest(library_path)
+    root = data.get('storage_root')
+    failures = {}
+    for book_id in book_ids:
+        key = str(int(book_id))
+        formats = data.get('books', {}).get(key)
+        if not formats:
+            continue
+        try:
+            if remove_files:
+                if not root or not os.path.isdir(root):
+                    raise FileNotFoundError('External storage is unavailable')
+                import datetime
+                for fmt, rel in formats.items():
+                    src = _safe_external_path(root, rel)
+                    if not os.path.isfile(src):
+                        raise FileNotFoundError(src)
+                    dest_dir = os.path.join(root, '.calibre-deleted-books', key)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    dest = os.path.join(dest_dir, fmt + '.original')
+                    if os.path.lexists(dest):
+                        raise FileExistsError(dest)
+                    os.replace(src, dest)
+            data['books'].pop(key, None)
+            data['pending_comicinfo'] = [x for x in data.get('pending_comicinfo', ()) if x != key]
+            save_manifest(library_path, data)
+        except Exception as err:
+            failures[key] = str(err)
+    return failures
