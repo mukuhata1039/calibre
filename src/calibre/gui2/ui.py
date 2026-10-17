@@ -240,31 +240,42 @@ class Main(
         self.library_broker.start_listening_for_db_events()
         self.event_in_db.connect(callback)
 
-    def run_external_comic_sync(self):
-        """Flush ComicInfo changes using the existing GUI database handle.
-
-        Do not open a second LibraryDatabase for the active library. On
-        Windows, concurrent handles can interfere with book-folder renames.
-        """
+    def run_external_comic_sync(self, manual=False):
+        """Synchronize queued CBZ metadata with visible manual feedback."""
         if self._external_comic_sync_running or self.shutting_down:
+            if manual:
+                info_dialog(self, '外部CBZ同期', '同期処理が実行中です。', show=True)
             return
         try:
             from calibre.gui2.external_book_store import (
                 pending_comic_info_sync, sync_queued_comic_info,
             )
             db = self.current_db
-            if not pending_comic_info_sync(db.library_path):
+            pending = pending_comic_info_sync(db.library_path)
+            if not pending:
+                if manual:
+                    info_dialog(self, '外部CBZ同期', '同期待ちのCBZはありません。', show=True)
                 return
             self._external_comic_sync_running = True
             try:
                 done, failed = sync_queued_comic_info(db)
-                if failed:
-                    prints('External ComicInfo synchronization failed:', failed)
             finally:
                 self._external_comic_sync_running = False
+            if failed:
+                prints('External ComicInfo synchronization failed:', failed)
+                if manual:
+                    error_dialog(self, '外部CBZ同期失敗',
+                        f'成功: {len(done)}冊、失敗: {len(failed)}冊',
+                        det_msg='\\n'.join(f'{k}: {v}' for k, v in failed.items()),
+                        show=True)
+            elif manual:
+                info_dialog(self, '外部CBZ同期', f'{len(done)}冊のComicInfo.xmlを同期しました。', show=True)
         except Exception:
             import traceback
-            traceback.print_exc()
+            details = traceback.format_exc()
+            prints(details)
+            if manual:
+                error_dialog(self, '外部CBZ同期失敗', '同期処理中にエラーが発生しました。', det_msg=details, show=True)
 
     def remove_db_listener(self, callback):
         self.event_in_db.disconnect(callback)
@@ -288,7 +299,7 @@ class Main(
         self._external_comic_sync_timer.timeout.connect(self.run_external_comic_sync)
         self._external_comic_sync_timer.start()
         self._external_comic_sync_now = QAction('外部CBZを今すぐ同期', self)
-        self._external_comic_sync_now.triggered.connect(self.run_external_comic_sync)
+        self._external_comic_sync_now.triggered.connect(lambda: self.run_external_comic_sync(manual=True))
         self.addAction(self._external_comic_sync_now)
         self._external_comic_sync_now.setShortcut('Ctrl+Alt+Shift+S')
         self._external_comic_sync_now.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
