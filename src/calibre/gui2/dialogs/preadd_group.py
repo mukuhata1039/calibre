@@ -104,6 +104,19 @@ class PreAddPreview(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.itemChanged.connect(self.changed)
         self.table.currentCellChanged.connect(self.show_filename)
+        external_row = QHBoxLayout()
+        self.external_mirror = QCheckBox('外部保管庫にもコピー（試験機能・内部の本は残す）')
+        self.external_mirror.setChecked(False)
+        external_row.addWidget(self.external_mirror)
+        self.external_root = QLineEdit()
+        self.external_root.setPlaceholderText('外部保管先フォルダ（例：F:\\Books\\Manga）')
+        self.external_root.setText(gprefs.get('preadd_external_mirror_root', ''))
+        external_row.addWidget(self.external_root)
+        choose_root = QPushButton('参照')
+        choose_root.clicked.connect(self.choose_external_root)
+        external_row.addWidget(choose_root)
+        root.addLayout(external_row)
+
         root.addWidget(self.table)
 
         self.import_fields = {}
@@ -289,6 +302,21 @@ class PreAddPreview(QDialog):
         gprefs['preadd_import_fields'] = [
             name for name, checkbox in self.import_fields.items() if checkbox.isChecked()
         ]
+
+    def choose_external_root(self):
+        folder = QFileDialog.getExistingDirectory(self, '外部書籍保管庫を選択', self.external_root.text())
+        if folder:
+            self.external_root.setText(folder)
+
+    def external_mirror_settings(self):
+        if not self.external_mirror.isChecked():
+            return ''
+        root = os.path.abspath(os.path.expanduser(self.external_root.text().strip()))
+        if not self.external_root.text().strip() or not os.path.isdir(root):
+            QMessageBox.warning(self, '外部保存先が無効', '存在する外部保管庫のフォルダを指定してください。')
+            return None
+        gprefs['preadd_external_mirror_root'] = root
+        return root
 
     def metadata_overrides(self):
         return {
@@ -629,7 +657,13 @@ def preadd_group_dialog(paths, parent=None, library_paths=(), default_library=''
     dialog.append(paths)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
-    return dialog.metadata_overrides()
+    external_root = dialog.external_mirror_settings()
+    if external_root is None:
+        return None
+    overrides = dialog.metadata_overrides()
+    for item in overrides.values():
+        item['external_mirror_root'] = external_root
+    return overrides
 
 if __name__ == '__main__':
     app = QApplication.instance() or QApplication(sys.argv)
