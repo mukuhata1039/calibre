@@ -627,10 +627,19 @@ class AddAction(InterfaceAction):
             on_card = 'carda' if self.gui.stack.currentIndex() == 2 else 'cardb' if self.gui.stack.currentIndex() == 3 else None
         if not paths:
             return
+        metadata_overrides = None
+        # Pre-import metadata editor is only used when adding local books to
+        # the library. Device uploads retain the normal upstream behaviour.
+        if not to_device and not delete_after_add:
+            from calibre.gui2.dialogs.preadd_group import preadd_group_dialog
+            metadata_overrides = preadd_group_dialog(paths, self.gui)
+            if metadata_overrides is None:
+                return
         from calibre.gui2.add import Adder
 
         Adder(
             paths,
+            metadata_overrides=metadata_overrides,
             db=None if to_device else self.gui.current_db,
             parent=self.gui,
             callback=partial(self._files_added, on_card=on_card, delete_after_add=delete_after_add),
