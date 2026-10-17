@@ -97,7 +97,22 @@ class PreAddPreview(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.itemChanged.connect(self.changed)
+        self.table.currentCellChanged.connect(self.show_filename)
         root.addWidget(self.table)
+
+        filename_row = QHBoxLayout()
+        filename_row.addWidget(QLabel('ファイル名（文字を選択して Ctrl+C でコピー）'))
+        self.filename_text = QLineEdit()
+        self.filename_text.setReadOnly(True)
+        self.filename_text.setPlaceholderText('一覧でファイルをクリックすると、ここに名前が表示されます')
+        filename_row.addWidget(self.filename_text)
+        copy_name = QPushButton('ファイル名をコピー')
+        copy_name.clicked.connect(self.copy_filename)
+        filename_row.addWidget(copy_name)
+        copy_stem = QPushButton('拡張子なしでコピー')
+        copy_stem.clicked.connect(lambda: self.copy_filename(with_extension=False))
+        filename_row.addWidget(copy_stem)
+        root.addLayout(filename_row)
 
         row = QHBoxLayout()
         row.addWidget(QLabel('シリーズ名'))
@@ -184,6 +199,21 @@ class PreAddPreview(QDialog):
             }
             for book in self.books
         }
+
+    def show_filename(self, row, column, previous_row=None, previous_column=None):
+        if row < 0:
+            self.filename_text.clear()
+            return
+        item = self.table.item(row, 1)
+        self.filename_text.setText(item.text() if item else '')
+        self.filename_text.setCursorPosition(0)
+
+    def copy_filename(self, with_extension=True):
+        name = self.filename_text.text()
+        if name:
+            QApplication.clipboard().setText(
+                name if with_extension else os.path.splitext(name)[0]
+            )
 
     def add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
