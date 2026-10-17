@@ -2040,18 +2040,6 @@ class Cache:
             self._mark_as_dirty(dirtied)
             self._clear_link_map_cache(dirtied)
             self.event_dispatcher(EventType.metadata_changed, name, dirtied)
-        if dirtied and name in {'title', 'authors', 'series', 'series_index', 'publisher', 'tags'}:
-            # Queue external ComicInfo updates. Never rewrite a large CBZ
-            # during the metadata editor's synchronous save operation.
-            try:
-                from calibre.gui2.external_book_store import queue_comic_info_sync, queue_external_organization
-                for changed_id in dirtied:
-                    queue_comic_info_sync(self.backend.library_path, changed_id)
-                    if name in {'title', 'series', 'series_index'}:
-                        queue_external_organization(self.backend.library_path, changed_id)
-            except Exception:
-                import traceback
-                traceback.print_exc()
         return dirtied
 
     _set_field = set_field
