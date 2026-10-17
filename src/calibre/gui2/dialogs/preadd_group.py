@@ -104,31 +104,10 @@ class PreAddPreview(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.itemChanged.connect(self.changed)
         self.table.currentCellChanged.connect(self.show_filename)
-        external_row = QHBoxLayout()
-        self.external_root = QLineEdit()
-        self.external_root.setPlaceholderText('外部保管庫（例：F:\\\\Books\\\\Manga）')
-        self.external_root.setText(gprefs.get('preadd_external_mirror_root', ''))
-        external_row.addWidget(QLabel('外部保管庫'))
-        external_row.addWidget(self.external_root)
-        choose_root = QPushButton('参照')
-        choose_root.clicked.connect(self.choose_external_root)
-        external_row.addWidget(choose_root)
-        root.addLayout(external_row)
-        from calibre.gui2.external_book_store import DEFAULT_FOLDER_TEMPLATE, DEFAULT_FILE_TEMPLATE
-        self.external_folder_template = QLineEdit(gprefs.get('preadd_external_folder_template', DEFAULT_FOLDER_TEMPLATE))
-        self.external_file_template = QLineEdit(gprefs.get('preadd_external_file_template', DEFAULT_FILE_TEMPLATE))
-        template_row = QHBoxLayout()
-        template_row.addWidget(QLabel('フォルダ構成'))
-        template_row.addWidget(self.external_folder_template)
-        template_row.addWidget(QLabel('ファイル名'))
-        template_row.addWidget(self.external_file_template)
-        root.addLayout(template_row)
-        self.external_preview = QLabel()
-        root.addWidget(self.external_preview)
-        self.external_folder_template.textChanged.connect(self.update_external_preview)
-        self.external_file_template.textChanged.connect(self.update_external_preview)
-        self.external_root.textChanged.connect(self.update_external_preview)
-        self.update_external_preview()
+        # Keep the library's normal internal format storage as the default.
+        # Existing external books remain available via their legacy manifest;
+        # newly imported books no longer create external mirrors.
+        root.addWidget(QLabel('書籍本体はcalibreライブラリ内に保存します。軽量バックアップでは書籍本体を除外できます。'))
 
         root.addWidget(self.table)
 
@@ -716,15 +695,9 @@ def preadd_group_dialog(paths, parent=None, library_paths=(), default_library=''
     dialog.append(paths)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
-    external_settings = dialog.external_mirror_settings()
-    if external_settings is None:
-        return None
-    overrides = dialog.metadata_overrides()
-    for item in overrides.values():
-        item['external_mirror_root'] = external_settings[0]
-        item['external_folder_template'] = external_settings[1]
-        item['external_file_template'] = external_settings[2]
-    return overrides
+    # No external_mirror_root override: the normal calibre importer preserves
+    # its native layout and native book-format semantics.
+    return dialog.metadata_overrides()
 
 if __name__ == '__main__':
     app = QApplication.instance() or QApplication(sys.argv)
