@@ -241,36 +241,30 @@ class Main(
         self.event_in_db.connect(callback)
 
     def run_external_comic_sync(self):
+        """Flush ComicInfo changes using the existing GUI database handle.
+
+        Do not open a second LibraryDatabase for the active library. On
+        Windows, concurrent handles can interfere with book-folder renames.
+        """
         if self._external_comic_sync_running or self.shutting_down:
             return
         try:
-            library_path = self.current_db.library_path
-            from calibre.gui2.external_book_store import pending_comic_info_sync
-            if not pending_comic_info_sync(library_path):
+            from calibre.gui2.external_book_store import (
+                pending_comic_info_sync, sync_queued_comic_info,
+            )
+            db = self.current_db
+            if not pending_comic_info_sync(db.library_path):
                 return
-        except Exception:
-            return
-        import threading
-        self._external_comic_sync_running = True
-
-        def do_sync():
-            db = None
+            self._external_comic_sync_running = True
             try:
-                from calibre.db.legacy import LibraryDatabase
-                from calibre.gui2.external_book_store import sync_queued_comic_info
-                db = LibraryDatabase(library_path)
                 done, failed = sync_queued_comic_info(db)
                 if failed:
                     prints('External ComicInfo synchronization failed:', failed)
-            except Exception:
-                import traceback
-                traceback.print_exc()
             finally:
-                if db is not None:
-                    db.close()
                 self._external_comic_sync_running = False
-
-        threading.Thread(target=do_sync, name='calibre-external-comicinfo', daemon=True).start()
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def remove_db_listener(self, callback):
         self.event_in_db.disconnect(callback)
@@ -286,8 +280,8 @@ class Main(
         t.setInterval(1000), t.timeout.connect(self.handle_changes_from_server_debounced), t.setSingleShot(True)
         self._spare_pool = None
         self.must_restart_before_config = False
-        # External ComicInfo syncing is opt-in by virtue of the external
-        # manifest; run in a worker so large CBZs never freeze the GUI.
+        # External ComicInfo synchronization uses the active database handle.
+        # A large CBZ may briefly block the GUI during its ZIP rewrite.
         self._external_comic_sync_running = False
         self._external_comic_sync_timer = QTimer(self)
         self._external_comic_sync_timer.setInterval(30000)
