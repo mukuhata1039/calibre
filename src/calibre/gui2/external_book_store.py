@@ -651,3 +651,111 @@ def clean_empty_external_directories(library_path):
         else:
             removed.append(current)
     return removed
+
+
+def inspect_external_reconnection(db, new_root):
+    """Dry-run a relocated store or recover references using CBZ ComicInfo.
+
+    Exact relative paths take priority. Metadata matching requires a unique
+    candidate on both sides; missing/ambiguous entries are never guessed.
+    """
+    root = os.path.realpath(os.path.abspath(new_root))
+    if not os.path.isdir(root):
+        raise NotADirectoryError(root)
+    if os.path.normcase(os.path.realpath(db.library_path)) == os.path.normcase(root):
+        raise ValueError('ライブラリ本体を外部保管庫に指定できません')
+    data = load_manifest(db.library_path)
+    registered = data.get('books', {})
+    found = {}
+    occupied = set()
+    unresolved = []
+    for key, formats in registered.items():
+        for fmt, relative in formats.items():
+            dest = _safe_external_path(root, relative)
+            if os.path.isfile(dest):
+                found[(key, fmt)] = relative
+                occupied.add(os.path.normcase(os.path.realpath(dest)))
+            else:
+                unresolved.append((key, fmt))
+    # Discover orphaned CBZs only when they contain usable ComicInfo identity.
+    candidates = {}
+    for folder, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = [x for x in dirs if x != '.calibre-deleted-books' and not os.path.islink(os.path.join(folder, x))]
+        for filename in files:
+            if not filename.lower().endswith('.cbz'):
+                continue
+            path = os.path.join(folder, filename)
+            if os.path.normcase(os.path.realpath(path)) in occupied:
+                continue
+            try:
+                info = read_comic_info(path)
+                identity = comic_identity(info)
+                if not identity[2] or not identity[0]:
+                    continue
+                candidates.setdefault(identity, []).append(os.path.relpath(path, root))
+            except Exception:
+                continue
+    targets = {}
+    for book_id in db.new_api.all_book_ids():
+        try:
+            fmts = db.new_api.formats(book_id)
+            if isinstance(fmts, str):
+                fmts = fmts.split(',')
+            if 'CBZ' not in {str(x).upper() for x in (fmts or ())}:
+                continue
+            meta = db.new_api.get_metadata(book_id)
+            identity = comic_identity({
+                'Title': meta.title, 'Series': meta.series,
+                'Number': str(meta.series_index) if meta.series else '',
+            })
+            targets.setdefault(identity, []).append(str(int(book_id)))
+        except Exception:
+            continue
+    ambiguous = []
+    # Relink orphan CBZs ONLY if exactly one record and one archive match.
+    for identity, paths in candidates.items():
+        ids = targets.get(identity, ())
+        if len(ids) != 1 or len(paths) != 1:
+            if ids:
+                ambiguous.append({'identity': identity, 'book_ids': list(ids), 'files': paths})
+            continue
+        key = ids[0]
+        if (key, 'CBZ') in found:
+            continue
+        if registered.get(key, {}).get('CBZ') and (key, 'CBZ') not in unresolved:
+            continue
+        found[(key, 'CBZ')] = paths[0]
+        occupied.add(os.path.normcase(os.path.realpath(_safe_external_path(root, paths[0]))))
+    missing = [
+        {'id': key, 'format': fmt} for key, fmt in unresolved if (key, fmt) not in found
+    ]
+    return {
+        'root': root, 'links': [
+            {'id': key, 'format': fmt, 'relative': rel}
+            for (key, fmt), rel in sorted(found.items())
+        ],
+        'missing': missing, 'ambiguous': ambiguous,
+        'registered_count': sum(map(len, registered.values())),
+    }
+
+
+def apply_external_reconnection(db, plan):
+    """Atomically replace manifest paths only after operator reviews plan.
+
+    Retain unresolved old entries so missing books never disappear silently.
+    """
+    root = plan['root']
+    if not os.path.isdir(root):
+        raise FileNotFoundError(root)
+    data = load_manifest(db.library_path)
+    for item in plan['links']:
+        key, fmt, relative = str(int(item['id'])), item['format'].upper(), item['relative']
+        target = _safe_external_path(root, relative)
+        if not os.path.isfile(target):
+            raise FileNotFoundError(target)
+        if not db.new_api.has_id(int(key)):
+            raise ValueError('書籍IDがライブラリにありません: ' + key)
+        data['books'].setdefault(key, {})[fmt] = relative
+    data['storage_root'] = root
+    save_manifest(db.library_path, data)
+    return len(plan['links'])
