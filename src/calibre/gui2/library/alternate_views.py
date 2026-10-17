@@ -470,7 +470,7 @@ def paths_from_event(self, event):
     md = event.mimeData()
     if md.hasFormat('text/uri-list') and not md.hasFormat('application/calibre+from_library'):
         urls = map(path_from_qurl, md.urls())
-        return [u for u in urls if u and os.path.splitext(u)[1] and os.path.exists(u)]
+        return [u for u in urls if u and os.path.exists(u) and (os.path.isdir(u) or os.path.splitext(u)[1])]
 
 
 def setup_dnd_interface(cls_or_self):
