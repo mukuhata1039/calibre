@@ -612,6 +612,23 @@ class Adder(QObject):
             db_inst = dbref()
             assert db_inst is not None
             book_id = db_inst.create_book_entry(mi, cover=cdata)
+            # Save the sortable romanized series name separately from the
+            # displayed series. This column can be sorted A-Z in the library.
+            for source_path in paths:
+                override = self.metadata_overrides.get(
+                    os.path.normcase(os.path.abspath(source_path))
+                )
+                if override is not None:
+                    roman = (override.get('series_roman') or '').strip()
+                    if roman:
+                        try:
+                            db_inst.set_field('#series_roman', {book_id: roman})
+                        except Exception:
+                            self.report.append(
+                                'Could not store series roman sort key for ' + mi.title
+                                + ': ' + traceback.format_exc()
+                            )
+                    break
             self.added_book_ids.add(book_id)
         except Exception:
             a = self.report.append
