@@ -130,9 +130,6 @@ class PreAddPreview(QDialog):
         row.addWidget(QLabel('シリーズ名'))
         self.series = QLineEdit()
         row.addWidget(self.series)
-        row.addWidget(QLabel('共通タグ'))
-        self.tags = QLineEdit()
-        row.addWidget(self.tags)
         root.addLayout(row)
 
         details = QHBoxLayout()
@@ -149,6 +146,7 @@ class PreAddPreview(QDialog):
         details.addWidget(QLabel('登録先ライブラリ'))
         self.category = QComboBox()
         self.category.addItems([])
+        self.category.currentIndexChanged.connect(self.library_changed)
         details.addWidget(self.category)
         details.addWidget(QLabel('出版社'))
         self.publisher = QLineEdit()
@@ -208,15 +206,36 @@ class PreAddPreview(QDialog):
     def set_libraries(self, library_paths, default_library):
         self.library_paths = list(library_paths)
         self.default_library = default_library
+        self.category.blockSignals(True)
         self.category.clear()
         for path in self.library_paths:
             self.category.addItem(os.path.basename(os.path.normpath(path)), path)
         idx = self.category.findData(default_library)
         if idx >= 0:
             self.category.setCurrentIndex(idx)
+        self.category.blockSignals(False)
         for book in self.books:
             if not book.get('category'):
                 book['category'] = default_library
+
+    def library_changed(self, _index):
+        library = self.category.currentData()
+        if not library:
+            return
+        targets = self.selected()
+        if not targets:
+            return
+        self.save_undo()
+        for i in targets:
+            self.books[i]['category'] = library
+        # Update the visible destination without resetting selections or
+        # overwriting any of the other metadata fields.
+        for row in range(self.table.rowCount()):
+            cell = self.table.item(row, 0)
+            if cell is not None and cell.data(Qt.ItemDataRole.UserRole) in targets:
+                destination = self.table.item(row, 5)
+                if destination is not None:
+                    destination.setText(os.path.basename(os.path.normpath(library)))
 
     def metadata_overrides(self):
         return {
@@ -258,11 +277,12 @@ class PreAddPreview(QDialog):
         book = self.books[entry.data(Qt.ItemDataRole.UserRole)]
         self.title.setText(book.get('title', ''))
         self.series.setText(book.get('series', ''))
-        self.tags.setText(book.get('tags', ''))
         self.publisher.setText(book.get('publisher', ''))
         idx = self.category.findData(book.get('category', self.default_library))
         if idx >= 0:
+            self.category.blockSignals(True)
             self.category.setCurrentIndex(idx)
+            self.category.blockSignals(False)
         names = [x for x in book.get('author', '').split('×') if x]
         while len(self.author_inputs) < max(1, len(names)):
             self.add_author_field()
@@ -400,9 +420,8 @@ class PreAddPreview(QDialog):
         for i in self.selected():
             self.books[i]['title'] = self.title.text().strip()
             self.books[i]['series'] = self.series.text().strip()
-            self.books[i]['tags'] = self.tags.text().strip()
             self.books[i]['author'] = self.author_display_name()
-            self.books[i]['category'] = self.category.currentData()
+            # Destination is updated immediately on combo selection.
             self.books[i]['publisher'] = self.publisher.text().strip()
             self.books[i]['configured'] = True
         self.refresh()
