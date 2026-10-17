@@ -275,6 +275,71 @@ def pending_comic_info_sync(library_path):
     return tuple(load_manifest(library_path).get('pending_comicinfo', ()))
 
 
+
+
+def external_relative_name(mi, book_id, fmt):
+    """Readable, collision-resistant destination based on calibre metadata."""
+    def clean(value):
+        value = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', '_', str(value or ''))
+        value = value.strip(' .')
+        return (value[:100].rstrip(' .') or '名称未設定')
+    series = clean(mi.series) if mi.series else ''
+    title = clean(mi.title)
+    if series:
+        number = f'{mi.series_index:g}' if mi.series_index is not None else ''
+        filename = f'{series} 第{number}巻 - {title}' if number else title
+        folder = series
+    else:
+        filename = title
+        folder = '単巻・シリーズなし'
+    # ID suffix avoids collisions even for equal titles or equal series numbers.
+    return os.path.join(folder, clean(filename) + f' [{int(book_id)}].{str(fmt).lower().lstrip(".")}')
+
+
+def organize_external_format(db, book_id, fmt, metadata=None):
+    """Move a registered format to its metadata-derived name, safely.
+
+    When the external device is offline, keep the existing manifest untouched.
+    No filename is replaced, and the manifest changes only after the move.
+    """
+    fmt = str(fmt).upper().lstrip('.')
+    library = db.library_path
+    data = load_manifest(library)
+    key = str(int(book_id))
+    old_rel = data.get('books', {}).get(key, {}).get(fmt)
+    if not old_rel:
+        return None
+    root = data.get('storage_root')
+    if not root or not os.path.isdir(root):
+        raise FileNotFoundError('外部保管庫が接続されていません')
+    old = _safe_external_path(root, old_rel)
+    if not os.path.isfile(old):
+        raise FileNotFoundError(old)
+    mi = metadata if metadata is not None else db.new_api.get_metadata(int(book_id))
+    new_rel = external_relative_name(mi, book_id, fmt)
+    new = _safe_external_path(root, new_rel)
+    if os.path.normcase(os.path.realpath(old)) == os.path.normcase(os.path.realpath(new)):
+        return old
+    if os.path.lexists(new):
+        raise FileExistsError('移動先が既に存在します: ' + new)
+    os.makedirs(os.path.dirname(new), exist_ok=True)
+    os.replace(old, new)
+    try:
+        # Only update this book/format, preserving other pending changes.
+        latest = load_manifest(library)
+        if latest.get('books', {}).get(key, {}).get(fmt) != old_rel:
+            raise RuntimeError('外部保管庫の登録情報が移動中に変更されました')
+        latest['books'][key][fmt] = os.path.relpath(new, root)
+        save_manifest(library, latest)
+    except Exception:
+        os.replace(new, old)
+        raise
+    try:
+        os.rmdir(os.path.dirname(old))
+    except OSError:
+        pass
+    return new
+
 def sync_queued_comic_info(db, all_registered=False):
     """Synchronize pending books from calibre's current DB to external CBZ.
 
@@ -304,6 +369,7 @@ def sync_queued_comic_info(db, all_registered=False):
                 'Tags': ', '.join(mi.tags or ()),
             }
             write_comic_info(path, changes)
+            path = organize_external_format(db, book_id, 'CBZ', metadata=mi)
             actual = read_comic_info(path)
             mismatched = [field for field, value in changes.items() if actual.get(field, '') != str(value or '').strip()]
             if mismatched:
