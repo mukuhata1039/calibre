@@ -686,8 +686,11 @@ class Adder(QObject):
                                 raise ValueError('External storage root differs from the existing library configuration')
                             set_storage_root(library_path, store)
                             # Stable by calibre book ID; never overwrite a prior mirror.
-                            relative = os.path.join(str(book_id), str(fmt).lower() + '.' + str(fmt).lower())
-                            copy_to_store(path, store, relative)
+                            relative = os.path.join(str(book_id), 'book.' + str(fmt).lower())
+                            canonical = db.format_abspath(book_id, fmt)
+                            if not canonical:
+                                raise FileNotFoundError('Imported calibre format is missing')
+                            copy_to_store(canonical, store, relative)
                             register_external_format(library_path, book_id, fmt, relative)
                         except Exception:
                             self.report.append(
