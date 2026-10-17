@@ -252,13 +252,11 @@ class Main(
             )
             db = self.current_db
             pending = pending_comic_info_sync(db.library_path)
-            if not pending:
-                if manual:
-                    info_dialog(self, '外部CBZ同期', '同期待ちのCBZはありません。', show=True)
+            if not pending and not manual:
                 return
             self._external_comic_sync_running = True
             try:
-                done, failed = sync_queued_comic_info(db)
+                done, failed = sync_queued_comic_info(db, all_registered=manual)
             finally:
                 self._external_comic_sync_running = False
             if failed:
@@ -269,7 +267,7 @@ class Main(
                         det_msg='\\n'.join(f'{k}: {v}' for k, v in failed.items()),
                         show=True)
             elif manual:
-                info_dialog(self, '外部CBZ同期', f'{len(done)}冊のComicInfo.xmlを同期しました。', show=True)
+                info_dialog(self, '外部CBZ同期', f'{len(done)}冊の外部CBZを再同期し、書き込み内容を検証しました。', show=True)
         except Exception:
             import traceback
             details = traceback.format_exc()
