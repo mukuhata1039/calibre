@@ -11,7 +11,7 @@ import sys
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QComboBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence, QWidget, QInputDialog,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QTableWidgetSelectionRange, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence, QWidget, QInputDialog,
 )
 
  
