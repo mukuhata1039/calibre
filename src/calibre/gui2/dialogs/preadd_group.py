@@ -63,6 +63,8 @@ class PreAddPreview(QDialog):
         super().__init__()
         self.setWindowTitle('calibre 登録前グループ設定 — 試作版')
         self.resize(1350, 700)
+        self.library_paths = []
+        self.default_library = ''
         self.books = []
         self.order_mode = False
         self.order_candidates = set()
@@ -95,7 +97,7 @@ class PreAddPreview(QDialog):
         root.addLayout(controls)
 
         self.table = ReorderTable(self)
-        self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'シリーズ名', '巻数', '著者名', '作品区分', '出版社', '状態'])
+        self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'シリーズ名', '巻数', '著者名', '登録先', '出版社', '状態'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -144,17 +146,10 @@ class PreAddPreview(QDialog):
         add_author_button = QPushButton('＋ 著者を追加')
         add_author_button.clicked.connect(self.add_author_field)
         details.addWidget(add_author_button)
-        details.addWidget(QLabel('作品区分'))
+        details.addWidget(QLabel('登録先ライブラリ'))
         self.category = QComboBox()
-        self.category.setEditable(True)
-        self.category.addItems(self.category_choices())
+        self.category.addItems([])
         details.addWidget(self.category)
-        category_add = QPushButton('区分追加')
-        category_add.clicked.connect(self.add_category)
-        details.addWidget(category_add)
-        category_remove = QPushButton('区分削除')
-        category_remove.clicked.connect(self.remove_category)
-        details.addWidget(category_remove)
         details.addWidget(QLabel('出版社'))
         self.publisher = QLineEdit()
         details.addWidget(self.publisher)
@@ -210,34 +205,18 @@ class PreAddPreview(QDialog):
         root.addLayout(actions)
         self.setAcceptDrops(True)
 
-    def category_choices(self):
-        return [''] + list(dict.fromkeys(x for x in gprefs.get('preadd_custom_categories', []) if x))
-
-    def add_category(self):
-        name, ok = QInputDialog.getText(self, '作品区分の追加', '新しい区分名')
-        name = name.strip()
-        if not ok or not name:
-            return
-        choices = self.category_choices()
-        if name not in choices:
-            gprefs['preadd_custom_categories'] = list(dict.fromkeys(
-                list(gprefs.get('preadd_custom_categories', [])) + [name]
-            ))
-            self.category.addItem(name)
-        self.category.setCurrentText(name)
-
-    def remove_category(self):
-        name = self.category.currentText().strip()
-        custom = list(gprefs.get('preadd_custom_categories', []))
-        if name not in custom:
-            QMessageBox.information(self, '作品区分', '削除できるのは自分で追加した区分だけです。')
-            return
-        custom.remove(name)
-        gprefs['preadd_custom_categories'] = custom
-        idx = self.category.findText(name)
+    def set_libraries(self, library_paths, default_library):
+        self.library_paths = list(library_paths)
+        self.default_library = default_library
+        self.category.clear()
+        for path in self.library_paths:
+            self.category.addItem(os.path.basename(os.path.normpath(path)), path)
+        idx = self.category.findData(default_library)
         if idx >= 0:
-            self.category.removeItem(idx)
-        self.category.setCurrentIndex(0)
+            self.category.setCurrentIndex(idx)
+        for book in self.books:
+            if not book.get('category'):
+                book['category'] = default_library
 
     def metadata_overrides(self):
         return {
@@ -247,7 +226,7 @@ class PreAddPreview(QDialog):
                 'series_index': book['number'],
                 'authors': book['author'],
                 'publisher': book['publisher'],
-                'category': book['category'],
+                'library_path': book['category'],
                 'tags': book['tags'],
             }
             for book in self.books
@@ -281,7 +260,9 @@ class PreAddPreview(QDialog):
         self.series.setText(book.get('series', ''))
         self.tags.setText(book.get('tags', ''))
         self.publisher.setText(book.get('publisher', ''))
-        self.category.setCurrentText(book.get('category', ''))
+        idx = self.category.findData(book.get('category', self.default_library))
+        if idx >= 0:
+            self.category.setCurrentIndex(idx)
         names = [x for x in book.get('author', '').split('×') if x]
         while len(self.author_inputs) < max(1, len(names)):
             self.add_author_field()
@@ -340,7 +321,7 @@ class PreAddPreview(QDialog):
                 'number': info.get('number', number),
                 'tags': info.get('tags', ''),
                 'author': '×'.join(info.get('authors', [])),
-                'category': '', 'publisher': info.get('publisher', ''),
+                'category': self.default_library, 'publisher': info.get('publisher', ''),
                 'configured': False
             })
         self.save_undo()
@@ -356,7 +337,7 @@ class PreAddPreview(QDialog):
             self.table.insertRow(row)
             rank = self.order_clicks.index(i) + 1 if i in self.order_clicks else None
             display_index = f'✓ {self.order_start + rank - 1}巻' if self.order_mode and rank is not None else i + 1
-            vals = [display_index, os.path.basename(book['path']), book['series'], book['number'], book['author'], book['category'], book['publisher'],
+            vals = [display_index, os.path.basename(book['path']), book['series'], book['number'], book['author'], os.path.basename(os.path.normpath(book['category'])) if book['category'] else '', book['publisher'],
                     '設定済' if book['configured'] else '未設定']
             for col, value in enumerate(vals):
                 item = QTableWidgetItem('' if value is None else str(value))
@@ -421,7 +402,7 @@ class PreAddPreview(QDialog):
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['tags'] = self.tags.text().strip()
             self.books[i]['author'] = self.author_display_name()
-            self.books[i]['category'] = self.category.currentText().strip()
+            self.books[i]['category'] = self.category.currentData()
             self.books[i]['publisher'] = self.publisher.text().strip()
             self.books[i]['configured'] = True
         self.refresh()
@@ -556,12 +537,13 @@ class PreAddPreview(QDialog):
 
 
 
-def preadd_group_dialog(paths, parent=None):
+def preadd_group_dialog(paths, parent=None, library_paths=(), default_library=''):
     dialog = PreAddPreview()
     if parent is not None:
         dialog.setParent(parent)
         dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
         dialog.setWindowFlags(Qt.WindowType.Dialog)
+    dialog.set_libraries(library_paths, default_library)
     dialog.append(paths)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
