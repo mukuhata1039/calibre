@@ -669,17 +669,44 @@ class AddAction(InterfaceAction):
             from calibre.gui2.add import Adder
             from calibre.db.legacy import LibraryDatabase
             def ensure_series_sort_column(database):
-                field = '#series_roman'
-                if field in database.new_api.field_metadata:
-                    return
+                # Creating a custom column updates the on-disk schema, but
+                # the live calibre field cache is not rebuilt until reopen.
+                # Do not attempt to set_field before it has been rebuilt.
+                if '#series_roman' in database.new_api.fields:
+                    return True
+                if '#series_roman' in database.new_api.field_metadata:
+                    return False
+                database.create_custom_column('series_roman', 'シリーズ読み (A-Z)', 'text', False)
+                return False
+
+            # Prepare all destinations before importing even one book.
+            # A newly created field needs calibre to be restarted.
+            restart_required = False
+            for destination in groups:
+                if destination == default_library:
+                    database = self.gui.current_db
+                    should_close = False
+                else:
+                    from calibre.db.legacy import LibraryDatabase
+                    database = LibraryDatabase(destination)
+                    should_close = True
                 try:
-                    database.create_custom_column('series_roman', 'シリーズ読み (A-Z)', 'text', False)
+                    if not ensure_series_sort_column(database):
+                        restart_required = True
                 except Exception as err:
-                    error_dialog(
-                        self.gui, 'ソート列の作成に失敗',
-                        f'シリーズのローマ字ソート列を作成できませんでした: {err}',
-                        show=True,
-                    )
+                    error_dialog(self.gui, 'ソート列の作成に失敗', str(err), show=True)
+                    return
+                finally:
+                    if should_close:
+                        database.close()
+            if restart_required:
+                info_dialog(
+                    self.gui, 'calibreの再起動が必要',
+                    '「シリーズ読み (A-Z)」列を作成しました。'
+                    'まだ書籍は登録していません。calibreを終了して再起動後、もう一度登録してください。',
+                    show=True,
+                )
+                return
 
             # Keep external database handles alive until their Adder finishes.
             for library, group_paths in groups.items():
@@ -688,7 +715,6 @@ class AddAction(InterfaceAction):
                     for path in group_paths
                 }
                 if library == default_library:
-                    ensure_series_sort_column(self.gui.current_db)
                     Adder(
                         group_paths, metadata_overrides=subset, db=self.gui.current_db,
                         parent=self.gui,
@@ -710,7 +736,6 @@ class AddAction(InterfaceAction):
                         finally:
                             database.close()
 
-                    ensure_series_sort_column(db)
                     Adder(
                         group_paths, metadata_overrides=subset, db=db,
                         parent=self.gui, callback=external_finished,
