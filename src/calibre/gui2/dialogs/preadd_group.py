@@ -222,7 +222,7 @@ class PreAddPreview(QDialog):
         library = self.category.currentData()
         if not library:
             return
-        targets = self.selected()
+        targets = self.selected() or list(range(len(self.books)))
         if not targets:
             return
         self.save_undo()
