@@ -32,6 +32,26 @@ class ExternalStoreSmoke(unittest.TestCase):
                 self.assertEqual(z.read('001.jpg'), image)
             self.assertEqual(comic_identity(info), ('作品', '3.0', '作品 3'))
 
+    def test_backend_external_path_resolution(self):
+        from calibre.db.backend import DB
+        with tempfile.TemporaryDirectory() as tmp:
+            lib = os.path.join(tmp, 'library')
+            store = os.path.join(tmp, 'store')
+            os.makedirs(lib)
+            os.makedirs(store)
+            with open(os.path.join(lib, 'metadata.db'), 'wb') as f:
+                f.write(b'test')
+            set_storage_root(lib, store)
+            target = os.path.join(store, 'book.cbz')
+            with open(target, 'wb') as f:
+                f.write(b'test cbz')
+            register_external_format(lib, 9, 'cbz', 'book.cbz')
+            fake = type('BackendStub', (), {'library_path': lib})()
+            self.assertEqual(DB.external_format_abspath(fake, 9, '.cbz'), target)
+            self.assertIsNone(DB.external_format_abspath(fake, 10, '.cbz'))
+            os.remove(target)
+            self.assertIsNone(DB.external_format_abspath(fake, 9, '.cbz'))
+
     def test_no_replacement_of_existing_external_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, 'source.cbz')
