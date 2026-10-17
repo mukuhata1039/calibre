@@ -319,23 +319,74 @@ def pending_comic_info_sync(library_path):
 
 
 
-def external_relative_name(mi, book_id, fmt):
-    """Readable, collision-resistant destination based on calibre metadata."""
+DEFAULT_FOLDER_TEMPLATE = '{series}'
+DEFAULT_FILE_TEMPLATE = '{series} 第{series_index:02}巻 - {title}'
+_ALLOWED_STORAGE_FIELDS = {'title', 'series', 'series_index', 'authors', 'publisher', 'library'}
+
+
+def set_storage_templates(library_path, folder, filename):
+    validate_storage_template(folder, folder=True)
+    validate_storage_template(filename, folder=False)
+    data = load_manifest(library_path)
+    data['folder_template'] = folder
+    data['filename_template'] = filename
+    save_manifest(library_path, data)
+
+
+def validate_storage_template(pattern, folder=False):
+    from string import Formatter
+    if not pattern or not pattern.strip():
+        raise ValueError('保存形式を入力してください')
+    if os.path.isabs(pattern) or '..' in pattern.replace('\\\\', '/').split('/'):
+        raise ValueError('絶対パスや親フォルダへの移動は使用できません')
+    for _, field, spec, conversion in Formatter().parse(pattern):
+        if field is not None:
+            if field not in _ALLOWED_STORAGE_FIELDS or conversion:
+                raise ValueError('使用できない変数: ' + str(field))
+            if spec and (field != 'series_index' or spec not in ('02', '03', '04', '02d', '03d', '04d')):
+                raise ValueError('対応していない書式指定: ' + spec)
+    if not folder and ('/' in pattern or '\\\\' in pattern):
+        raise ValueError('ファイル名にフォルダ区切りは使用できません')
+
+
+def external_relative_name(mi, book_id, fmt, data=None, library_name=''):
+    """Metadata template-based path, with collision prevention."""
+    data = data or {}
+    folder = data.get('folder_template', DEFAULT_FOLDER_TEMPLATE)
+    filename = data.get('filename_template', DEFAULT_FILE_TEMPLATE)
+    validate_storage_template(folder, folder=True)
+    validate_storage_template(filename, folder=False)
+
     def clean(value):
         value = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', '_', str(value or ''))
-        value = value.strip(' .')
-        return (value[:100].rstrip(' .') or '名称未設定')
-    series = clean(mi.series) if mi.series else ''
-    title = clean(mi.title)
-    if series:
-        number = f'{mi.series_index:g}' if mi.series_index is not None else ''
-        filename = f'{series} 第{number}巻 - {title}' if number else title
-        folder = series
-    else:
-        filename = title
-        folder = '単巻・シリーズなし'
-    # ID suffix avoids collisions even for equal titles or equal series numbers.
-    return os.path.join(folder, clean(filename) + f' [{int(book_id)}].{str(fmt).lower().lstrip(".")}')
+        return value.strip(' .')[:100].rstrip(' .') or '名称未設定'
+
+    number = mi.series_index if mi.series_index is not None else 0
+    values = {
+        'title': clean(mi.title), 'series': clean(mi.series or '単巻・シリーズなし'),
+        'series_index': int(number) if float(number).is_integer() else number,
+        'authors': clean('×'.join(mi.authors or ())), 'publisher': clean(mi.publisher),
+        'library': clean(library_name),
+    }
+    folder_parts = [clean(part.format(**values)) for part in folder.replace('\\\\', '/').split('/') if part]
+    base = clean(filename.format(**values))
+    extension = str(fmt).lower().lstrip('.')
+    # A short ID suffix guarantees distinct names for equal metadata.
+    return os.path.join(*folder_parts, f'{base} [{int(book_id)}].{extension}')
+
+
+def remove_empty_external_parents(path, root):
+    """Only remove empty parents, never the storage root itself."""
+    root = os.path.normcase(os.path.realpath(root))
+    current = os.path.dirname(os.path.realpath(path))
+    while os.path.normcase(current) != root:
+        try:
+            if os.path.commonpath((root, current)) != root:
+                break
+            os.rmdir(current)
+        except (OSError, ValueError):
+            break
+        current = os.path.dirname(current)
 
 
 def organize_external_format(db, book_id, fmt, metadata=None):
@@ -358,7 +409,7 @@ def organize_external_format(db, book_id, fmt, metadata=None):
     if not os.path.isfile(old):
         raise FileNotFoundError(old)
     mi = metadata if metadata is not None else db.new_api.get_metadata(int(book_id))
-    new_rel = external_relative_name(mi, book_id, fmt)
+    new_rel = external_relative_name(mi, book_id, fmt, data, os.path.basename(os.path.normpath(library)))
     new = _safe_external_path(root, new_rel)
     if os.path.normcase(os.path.realpath(old)) == os.path.normcase(os.path.realpath(new)):
         return old
@@ -376,10 +427,7 @@ def organize_external_format(db, book_id, fmt, metadata=None):
     except Exception:
         os.replace(new, old)
         raise
-    try:
-        os.rmdir(os.path.dirname(old))
-    except OSError:
-        pass
+    remove_empty_external_parents(old, root)
     return new
 
 def sync_queued_comic_info(db, all_registered=False):
@@ -570,6 +618,7 @@ def finalize_deleted_external_books(library_path, book_ids, remove_files=False):
                     if os.path.lexists(dest):
                         raise FileExistsError(dest)
                     os.replace(src, dest)
+                    remove_empty_external_parents(src, root)
             data['books'].pop(key, None)
             data['pending_comicinfo'] = [x for x in data.get('pending_comicinfo', ()) if x != key]
             save_manifest(library_path, data)
