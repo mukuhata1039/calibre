@@ -100,7 +100,7 @@ def _sync_epub(path, data):
     try:
         shutil.copy2(path, temporary)
         with open(temporary, 'r+b') as stream:
-            set_metadata(stream, mi, apply_null=True, add_missing_cover=False)
+            set_metadata(stream, mi, apply_null=False, add_missing_cover=False)
         with zipfile.ZipFile(temporary) as check:
             bad = check.testzip()
             if bad is not None:
