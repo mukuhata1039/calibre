@@ -121,8 +121,8 @@ class PreAddPreview(QDialog):
         for key, label in field_labels:
             control = QCheckBox(label)
             control.setChecked(key in active_fields)
-            control.toggled.connect(self.persist_import_fields)
             self.import_fields[key] = control
+            control.toggled.connect(self.persist_import_fields)
             field_row.addWidget(control)
         root.addLayout(field_row)
 
