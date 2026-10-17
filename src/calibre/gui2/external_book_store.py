@@ -315,3 +315,44 @@ def sync_queued_comic_info(db, all_registered=False):
         ]
         save_manifest(library_path, latest)
     return successful, failures
+
+
+def migrate_book_cbz_to_external(db, book_id):
+    """Safely transition one CBZ to external-only storage.
+
+    Requires an existing registered mirror. Never discard internal content:
+    the original is quarantined and can be restored with the test restore API.
+    A mismatched backup blocks migration rather than overwriting data.
+    """
+    book_id = int(book_id)
+    library = db.library_path
+    external = resolve_external_format(library, book_id, 'CBZ')
+    if not external:
+        raise FileNotFoundError('No registered external CBZ for this book')
+    # Sync CURRENT metadata before moving anything. Other CBZs remain pending.
+    mi = db.new_api.get_metadata(book_id)
+    write_comic_info(external, {
+        'Title': mi.title or '',
+        'Series': mi.series or '',
+        'Number': str(mi.series_index) if mi.series else '',
+        'Writer': '×'.join(a for a in (mi.authors or ()) if a != 'Unknown'),
+        'Publisher': mi.publisher or '',
+        'Tags': ', '.join(mi.tags or ()),
+    })
+    # ZIP integrity check on the new archive happens in write_comic_info.
+    # Ensure all page images still exist in the external copy.
+    internal = db.new_api.format_abspath(book_id, 'CBZ')
+    if not internal or os.path.realpath(internal) == os.path.realpath(external):
+        raise ValueError('An independent internal CBZ is required for migration')
+    with zipfile.ZipFile(internal) as src, zipfile.ZipFile(external) as dest:
+        pages = {n: (v.file_size, v.CRC) for n in src.infolist() if n.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'))}
+        archived = {n: (v.file_size, v.CRC) for n in dest.infolist() if n.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'))}
+        if not pages or pages != archived:
+            raise ValueError('External CBZ page inventory differs from internal original')
+    target = stage_external_format_test(db, book_id, 'CBZ')
+    pending = load_manifest(library)
+    key = str(book_id)
+    if key in pending.get('pending_comicinfo', []):
+        pending['pending_comicinfo'] = [x for x in pending['pending_comicinfo'] if x != key]
+        save_manifest(library, pending)
+    return target
