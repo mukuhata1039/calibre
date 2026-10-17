@@ -67,6 +67,7 @@ class AddAction(InterfaceAction):
         assert self.add_menu is not None
         ma = partial(self.create_menu_action, self.add_menu)
         ma('recursive-add', _('Add from folders and sub-folders'), icon='mimetypes/dir.png').triggered.connect(self.add_recursive_question)
+        ma('preadd-folder', 'フォルダを登録前設定画面で追加', icon='mimetypes/dir.png').triggered.connect(self.add_preadd_folder)
         ma('archive-add-book', _('Add multiple books from archive (ZIP/RAR/7z)'), icon='mimetypes/zip.png').triggered.connect(self.add_from_archive)
         self.add_menu.addSeparator()
         ma('add-empty', _('Add empty book (Book entry with no formats)'), shortcut='Shift+Ctrl+E').triggered.connect(self.add_empty)
@@ -309,6 +310,15 @@ class AddAction(InterfaceAction):
         )
         if paths:
             self.do_add_recursive(paths, single, list_of_archives=True)
+
+    def add_preadd_folder(self):
+        root = choose_dir(self.gui, 'preadd folder import root', '書籍フォルダを選択')
+        if root:
+            from calibre.gui2.dialogs.preadd_group_metadata import expand_book_paths
+            paths = expand_book_paths([root])
+            if not paths:
+                return info_dialog(self.gui, '書籍が見つかりません', '対応する書籍ファイルがフォルダ内にありません。', show=True)
+            self._add_books(paths, to_device=False)
 
     def add_recursive(self, single):
         root = choose_dir(self.gui, 'recursive book import root dir dialog', _('Select root folder'))
