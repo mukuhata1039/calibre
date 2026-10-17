@@ -607,7 +607,6 @@ def finalize_deleted_external_books(library_path, book_ids, remove_files=False):
             if remove_files:
                 if not root or not os.path.isdir(root):
                     raise FileNotFoundError('External storage is unavailable')
-                import datetime
                 for fmt, rel in formats.items():
                     src = _safe_external_path(root, rel)
                     if not os.path.isfile(src):
@@ -625,3 +624,23 @@ def finalize_deleted_external_books(library_path, book_ids, remove_files=False):
         except Exception as err:
             failures[key] = str(err)
     return failures
+
+
+def clean_empty_external_directories(library_path):
+    """Remove empty folders under the configured root; keep all files intact."""
+    manifest = load_manifest(library_path)
+    root = manifest.get('storage_root')
+    if not root or not os.path.isdir(root):
+        raise FileNotFoundError('外部保管庫が見つかりません')
+    root = os.path.realpath(root)
+    removed = []
+    for current, _dirs, _files in os.walk(root, topdown=False, followlinks=False):
+        if os.path.normcase(os.path.realpath(current)) == os.path.normcase(root):
+            continue
+        try:
+            os.rmdir(current)
+        except OSError:
+            pass
+        else:
+            removed.append(current)
+    return removed
