@@ -486,7 +486,7 @@ class Adder(QObject):
             if overrides.get('series_index') is not None and overrides.get('series'):
                 mi.series_index = float(overrides['series_index'])
             if overrides.get('authors'):
-                mi.authors = [x.strip() for x in overrides['authors'].split('&') if x.strip()]
+                mi.authors = [overrides['authors'].strip()]
                 mi.author_sort = authors_to_sort_string(mi.authors)
             if overrides.get('publisher'):
                 mi.publisher = overrides['publisher']
