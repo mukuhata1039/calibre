@@ -67,9 +67,16 @@ class PreAddPreview(QDialog):
         self.order_candidates = set()
         self.order_clicks = []
         self.undo_stack = []
+        self.redo_stack = []
         self.undo_shortcut = QShortcut(QKeySequence('Ctrl+Z'), self)
         self.undo_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.undo_shortcut.activated.connect(self.undo)
+        self.redo_shortcuts = []
+        for sequence in ('Ctrl+Y', 'Ctrl+Shift+Z'):
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(self.redo)
+            self.redo_shortcuts.append(shortcut)
         root = QVBoxLayout(self)
         root.addWidget(QLabel('書籍をここにドロップ。複数選択し、グループごとに共通情報を設定します。\n試作版：ライブラリへの登録はしません。'))
 
@@ -223,18 +230,35 @@ class PreAddPreview(QDialog):
         return [self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
                 for idx in self.table.selectionModel().selectedRows()]
 
+    def snapshot(self):
+        return (deepcopy(self.books), self.order_mode,
+                set(self.order_candidates), list(self.order_clicks),
+                getattr(self, 'order_start', self.start.value()))
+
+    def restore(self, state):
+        self.books, self.order_mode, candidates, clicks, self.order_start = deepcopy(state)
+        self.order_candidates = set(candidates)
+        self.order_clicks = list(clicks)
+        self.update_order_controls()
+        self.refresh()
+
     def save_undo(self):
-        self.undo_stack.append(deepcopy(self.books))
+        self.undo_stack.append(self.snapshot())
         if len(self.undo_stack) > 100:
             self.undo_stack.pop(0)
+        self.redo_stack.clear()
 
     def undo(self):
-        if self.order_mode:
-            self.undo_order()
-            return
         if self.undo_stack:
-            self.books = self.undo_stack.pop()
-            self.refresh()
+            self.redo_stack.append(self.snapshot())
+            self.restore(self.undo_stack.pop())
+
+    def redo(self):
+        if self.redo_stack:
+            self.undo_stack.append(self.snapshot())
+            if len(self.undo_stack) > 100:
+                self.undo_stack.pop(0)
+            self.restore(self.redo_stack.pop())
 
     def apply(self):
         if not self.selected():
@@ -298,6 +322,7 @@ class PreAddPreview(QDialog):
         if not candidates:
             QMessageBox.information(self, '巻数指定', '先に巻数を設定する書籍を選択してください。')
             return
+        self.save_undo()
         self.order_mode = True
         self.order_candidates = candidates
         self.order_clicks = []
@@ -308,6 +333,7 @@ class PreAddPreview(QDialog):
     def record_order_click(self, book_index):
         if book_index not in self.order_candidates:
             return
+        self.save_undo()
         if book_index in self.order_clicks:
             # Click again to undo this book and any later sequence numbers.
             pos = self.order_clicks.index(book_index)
@@ -319,11 +345,15 @@ class PreAddPreview(QDialog):
 
     def undo_order(self):
         if self.order_clicks:
+            self.save_undo()
             self.order_clicks.pop()
             self.update_order_controls()
             self.refresh()
 
     def cancel_order(self):
+        if not self.order_mode:
+            return
+        self.save_undo()
         self.order_mode = False
         self.order_candidates.clear()
         self.order_clicks.clear()
@@ -337,7 +367,11 @@ class PreAddPreview(QDialog):
         for offset, idx in enumerate(self.order_clicks):
             self.books[idx]['number'] = self.order_start + offset
             self.books[idx]['configured'] = True
-        self.cancel_order()
+        self.order_mode = False
+        self.order_candidates.clear()
+        self.order_clicks.clear()
+        self.update_order_controls()
+        self.refresh()
 
     def reorder_selected(self, target_row):
         chosen = set(self.selected())
