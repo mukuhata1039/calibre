@@ -254,6 +254,10 @@ class Main(
         t.setInterval(1000), t.timeout.connect(self.handle_changes_from_server_debounced), t.setSingleShot(True)
         self._spare_pool = None
         self.must_restart_before_config = False
+        self._internal_comic_timer = QTimer(self)
+        self._internal_comic_timer.setInterval(3000)
+        self._internal_comic_timer.timeout.connect(self.flush_internal_comic_info)
+        self._internal_comic_timer.start()
 
         for ac in self.iactions.values():
             try:
@@ -1401,7 +1405,19 @@ class Main(
 
         open_url(QUrl(localize_website_link('https://calibre-ebook.com/donate')))
 
+    def flush_internal_comic_info(self):
+        from calibre.gui2.internal_comic_sync import flush
+        try:
+            db = self.current_db.new_api
+            done, failed = flush(db)
+            if failed:
+                prints('Internal CBZ ComicInfo sync failed:', failed)
+        except Exception:
+            import traceback
+            prints(traceback.format_exc())
+
     def confirm_quit(self):
+        self.flush_internal_comic_info()
         if self.job_manager.has_jobs():
             msg = _('There are active jobs. Are you sure you want to quit?')
             if self.job_manager.has_device_jobs():
