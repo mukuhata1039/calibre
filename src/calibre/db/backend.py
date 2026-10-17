@@ -1903,6 +1903,35 @@ class DB:
                     if book_dir.name.endswith(q) and book_dir.is_dir():
                         return book_dir.path
 
+    def external_format_abspath(self, book_id, fmt):
+        """Resolve an explicitly registered external book format.
+
+        Fail closed when the external drive is disconnected. Never search for
+        similarly named books, and never modify the library metadata here.
+        """
+        try:
+            import json
+            manifest = os.path.join(self.library_path, 'external-books.json')
+            if not os.path.isfile(manifest):
+                return None
+            with open(manifest, encoding='utf-8') as stream:
+                data = json.load(stream)
+            if data.get('version') != 1:
+                return None
+            root = data.get('storage_root')
+            rel = data.get('books', {}).get(str(int(book_id)), {}).get(
+                str(fmt).upper().lstrip('.')
+            )
+            if not root or not rel or os.path.isabs(rel):
+                return None
+            root = os.path.realpath(root)
+            target = os.path.realpath(os.path.join(root, rel))
+            if os.path.commonpath((root, target)) != root:
+                return None
+            return target if os.path.isfile(target) else None
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return None
+
     def format_abspath(self, book_id, fmt, fname, book_path, do_file_rename=True):
         path = os.path.join(self.library_path, book_path)
         fmt = ('.' + fmt.lower()) if fmt else ''
@@ -1911,6 +1940,9 @@ class DB:
             return fmt_path
         if not fmt:
             return
+        external = self.external_format_abspath(book_id, fmt)
+        if external:
+            return external
         q = fmt.lower()
         try:
             candidates = os.scandir(path)
