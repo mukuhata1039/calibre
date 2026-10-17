@@ -622,7 +622,7 @@ class Adder(QObject):
                     roman = (override.get('series_roman') or '').strip()
                     if roman:
                         try:
-                            db_inst.set_field('#series_roman', {book_id: roman})
+                            db_inst.new_api.set_field('#series_roman', {book_id: roman})
                         except Exception:
                             self.report.append(
                                 'Could not store series roman sort key for ' + mi.title
