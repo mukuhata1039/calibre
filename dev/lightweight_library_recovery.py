@@ -149,6 +149,8 @@ def reconnect_from_original_tree(library, source, ids=None):
     try:
         cache = db.new_api
         selection = sorted(ids if ids is not None else cache.all_book_ids())
+        if not selection:
+            raise ValueError('復元済みライブラリに書籍レコードがありません。復元元とパスを確認してください。')
         identity_counts = {}
         for current_id in selection:
             try:
@@ -162,10 +164,13 @@ def reconnect_from_original_tree(library, source, ids=None):
             book_id = int(book_id)
             try:
                 path = cache.field_for('path', book_id)
-                formats = cache.formats(book_id)
+                formats = cache.formats(book_id, verify_formats=False)
                 if isinstance(formats, str):
                     formats = formats.split(',')
-                for fmt in formats or ():
+                if not formats:
+                    outcomes.append([book_id, '', 'no-format-records'])
+                    continue
+                for fmt in formats:
                     ext = '.' + str(fmt).lower()
                     dest = cache.format_abspath(book_id, fmt)
                     if dest and os.path.isfile(dest):
@@ -252,7 +257,8 @@ def run():
             with open(report, 'w', encoding='utf-8') as out:
                 json.dump(outcomes, out, ensure_ascii=False, indent=2)
             done = sum(x[2] == 'attached' for x in outcomes)
-            message('完了', f'{done}形式を再接続しました。\n詳細ログ: {report}')
+            skipped = sum(x[2] not in ('attached', 'already-present') for x in outcomes)
+            message('再接続結果', f'再接続: {done}形式 / 未解決: {skipped}件\n詳細ログ: {report}')
     except Exception as err:
         import traceback
         QMessageBox.critical(None, '処理を中止しました', str(err) + '\n\n' + traceback.format_exc())
