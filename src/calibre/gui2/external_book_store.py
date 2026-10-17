@@ -14,7 +14,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 COMIC_FIELDS = ('Title', 'Series', 'Number', 'Writer', 'Publisher', 'Tags')
-_PREFIX = re.compile(r'^\\s*\\([a-z]{1,8}\\)\\s*', re.I)
+_PREFIX = re.compile(r'^\s*\([a-z]{1,8}\)\s*', re.I)
 
 
 def normalized_name(value):
