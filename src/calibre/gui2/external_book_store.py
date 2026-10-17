@@ -275,7 +275,7 @@ def pending_comic_info_sync(library_path):
     return tuple(load_manifest(library_path).get('pending_comicinfo', ()))
 
 
-def sync_queued_comic_info(db):
+def sync_queued_comic_info(db, all_registered=False):
     """Synchronize pending books from calibre's current DB to external CBZ.
 
     Failed books remain in the queue. This deliberately never updates calibre
@@ -283,8 +283,7 @@ def sync_queued_comic_info(db):
     """
     library_path = db.library_path
     data = load_manifest(library_path)
-    pending = list(data.get('pending_comicinfo', ()))
-    successful, failures = [], {}
+    pending = (\n        [key for key, formats in data.get('books', {}).items() if 'CBZ' in formats]\n        if all_registered else list(data.get('pending_comicinfo', ()))\n    )\n    successful, failures = [], {}
     for key in pending:
         try:
             book_id = int(key)
