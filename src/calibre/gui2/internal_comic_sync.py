@@ -6,6 +6,7 @@ database is authoritative. Pending book IDs are retained until a successful
 atomic rewrite. Only the internal CBZ at cache.format_abspath() is edited.
 """
 import os
+import shutil
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -85,24 +86,71 @@ def _sync_file(path, data):
     return True
 
 
+def _sync_epub(path, data):
+    """Write OPF using calibre's EPUB writer on a safe temporary copy."""
+    from calibre.ebooks.metadata.book.base import Metadata
+    from calibre.ebooks.metadata.epub import set_metadata
+    mi = Metadata(data['Title'], authors=data['Authors'])
+    mi.series = data['Series'] or None
+    mi.series_index = data['SeriesIndex']
+    mi.publisher = data['Publisher'] or None
+    mi.tags = data['Tags']
+    fd, temporary = tempfile.mkstemp(prefix='.epub-metadata-', suffix='.epub', dir=os.path.dirname(path))
+    os.close(fd)
+    try:
+        shutil.copy2(path, temporary)
+        with open(temporary, 'r+b') as stream:
+            set_metadata(stream, mi, apply_null=True, add_missing_cover=False)
+        with zipfile.ZipFile(temporary) as check:
+            bad = check.testzip()
+            if bad is not None:
+                raise ValueError('EPUB integrity check failed: ' + bad)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _sync_book(jobs):
+    for fmt, path, data in jobs:
+        if fmt == 'CBZ':
+            _sync_file(path, data)
+        else:
+            _sync_epub(path, data)
+
+
 def _snapshot(cache, book_id):
     """GUI thread only: read database metadata once, before background IO."""
-    path = cache.format_abspath(book_id, 'CBZ')
-    if not path or not os.path.isfile(path):
-        return None
     library = os.path.realpath(cache.backend.library_path)
-    path = os.path.realpath(path)
-    if os.path.commonpath((library, path)) != library:
-        return None
     mi = cache.get_metadata(book_id)
-    return path, {
-        'Title': mi.title,
-        'Series': mi.series,
-        'Number': ('%g' % mi.series_index) if mi.series else '',
-        'Writer': ', '.join(mi.authors or ()),
-        'Publisher': mi.publisher,
-        'Tags': ', '.join(mi.tags or ()),
-    }
+    formats = []
+    for fmt in ('CBZ', 'EPUB'):
+        path = cache.format_abspath(book_id, fmt)
+        if not path or not os.path.isfile(path):
+            continue
+        path = os.path.realpath(path)
+        if os.path.commonpath((library, path)) != library:
+            continue
+        if fmt == 'CBZ':
+            data = {
+                'Title': mi.title,
+                'Series': mi.series,
+                'Number': ('%g' % mi.series_index) if mi.series else '',
+                'Writer': ', '.join(mi.authors or ()),
+                'Publisher': mi.publisher,
+                'Tags': ', '.join(mi.tags or ()),
+            }
+        else:
+            data = {
+                'Title': mi.title,
+                'Series': mi.series,
+                'SeriesIndex': mi.series_index,
+                'Authors': list(mi.authors or ()),
+                'Publisher': mi.publisher,
+                'Tags': list(mi.tags or ()),
+            }
+        formats.append((fmt, path, data))
+    return formats
 
 
 def poll(cache):
@@ -139,13 +187,13 @@ def poll(cache):
         except Exception as err:
             failed[book_id] = str(err)
             break
-        if snap is None:
+        if not snap:
             with _lock:
                 if _pending.get(key, {}).get(book_id) == version:
                     _pending[key].pop(book_id, None)
             continue
         with _lock:
-            _active[key] = (book_id, version, _executor.submit(_sync_file, *snap))
+            _active[key] = (book_id, version, _executor.submit(_sync_book, snap))
         break
     return done, failed
 
