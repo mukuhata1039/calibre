@@ -113,3 +113,86 @@ def copy_to_store(source, store, relative_name):
         if os.path.exists(tmp):
             os.remove(tmp)
     return str(target)
+
+
+# Per-library manifest. It is separate from calibre's format table so existing
+# databases and book operations remain unchanged until integration is complete.
+import json
+
+
+def _manifest_path(library_path):
+    return os.path.join(os.path.abspath(library_path), 'external-books.json')
+
+
+def load_manifest(library_path):
+    path = _manifest_path(library_path)
+    if not os.path.exists(path):
+        return {'version': 1, 'storage_root': '', 'books': {}}
+    with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or data.get('version') != 1:
+        raise ValueError('Unsupported external book manifest')
+    if not isinstance(data.get('books'), dict):
+        raise ValueError('Invalid external book manifest')
+    return data
+
+
+def save_manifest(library_path, data):
+    """Atomically persist only references; never delete or move book formats."""
+    directory = os.path.abspath(library_path)
+    if not os.path.isfile(os.path.join(directory, 'metadata.db')):
+        raise ValueError('Not an existing calibre library')
+    fd, tmp = tempfile.mkstemp(prefix='.external-books-', suffix='.json', dir=directory)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, _manifest_path(directory))
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def set_storage_root(library_path, storage_root):
+    root = os.path.abspath(os.path.expanduser(storage_root))
+    if not os.path.isdir(root):
+        raise NotADirectoryError(root)
+    data = load_manifest(library_path)
+    data['storage_root'] = root
+    save_manifest(library_path, data)
+
+
+def register_external_format(library_path, book_id, fmt, relative_path):
+    """Register an ALREADY copied format, without altering calibre's database."""
+    data = load_manifest(library_path)
+    root = data.get('storage_root')
+    if not root:
+        raise ValueError('External storage root is not configured')
+    target = _safe_external_path(root, relative_path)
+    if not os.path.isfile(target):
+        raise FileNotFoundError(target)
+    key = str(int(book_id))
+    formats = data['books'].setdefault(key, {})
+    formats[str(fmt).upper().lstrip('.')] = os.path.relpath(target, root)
+    save_manifest(library_path, data)
+
+
+def _safe_external_path(root, relative_path):
+    root = os.path.realpath(root)
+    if os.path.isabs(relative_path):
+        raise ValueError('Absolute paths are not allowed in the manifest')
+    target = os.path.realpath(os.path.join(root, relative_path))
+    if os.path.commonpath((root, target)) != root:
+        raise ValueError('External path escapes storage root')
+    return target
+
+
+def resolve_external_format(library_path, book_id, fmt):
+    """Return the registered external file, or None if absent/unavailable."""
+    data = load_manifest(library_path)
+    relpath = data['books'].get(str(int(book_id)), {}).get(str(fmt).upper().lstrip('.'))
+    if not relpath or not data.get('storage_root'):
+        return None
+    target = _safe_external_path(data['storage_root'], relpath)
+    return target if os.path.isfile(target) else None
