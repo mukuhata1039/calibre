@@ -208,11 +208,20 @@ class EximDialog(Dialog):
         l.addWidget(b), l.addSpacing(20)
         self.imp_button = b = QPushButton(_('&Import previously exported data'))
         connect_lambda(b.clicked, self, lambda self: self.show_panel('import'))
-        l.addWidget(b), l.addStretch(20)
+        l.addWidget(b)
+        self.lightweight_button = b = QPushButton('書籍本体を除くバックアップ・復元・再接続')
+        b.setToolTip('メタデータと表紙をバックアップし、事故後に書籍を元のIDへ再接続します')
+        b.clicked.connect(self.open_lightweight_recovery)
+        l.addWidget(b)
+        l.addStretch(20)
 
         self.setup_export_panel()
         self.setup_import_panel()
         self.show_panel(self.initial_panel)
+
+    def open_lightweight_recovery(self):
+        from calibre.gui2.lightweight_library_recovery import run
+        run()
 
     def export_lib_text(self, lpath, size=None):
         return _('{0} [Size: {1}]\nin {2}').format(
