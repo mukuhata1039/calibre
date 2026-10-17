@@ -492,11 +492,38 @@ class Adder(QObject):
                 mi.author_sort = authors_to_sort_string(mi.authors)
             if overrides.get('publisher'):
                 mi.publisher = overrides['publisher']
-            if overrides.get('tags'):
-                new_tags = [x.strip() for x in overrides['tags'].split(',') if x.strip()]
-                mi.tags = list(dict.fromkeys((mi.tags or []) + new_tags))
-            if overrides.get('category'):
-                mi.tags = list(dict.fromkeys((mi.tags or []) + [overrides['category']]))
+            # Metadata.tags must always be a list, not a string. A bare
+            # string may otherwise be interpreted as individual characters.
+            existing_tags = mi.tags or []
+            if isinstance(existing_tags, str):
+                existing_tags = [x.strip() for x in existing_tags.split(',') if x.strip()]
+            else:
+                existing_tags = list(existing_tags)
+            user_tags = overrides.get('tags') or ''
+            if isinstance(user_tags, str):
+                user_tags = [x.strip() for x in user_tags.split(',') if x.strip()]
+            else:
+                user_tags = [str(x).strip() for x in user_tags if str(x).strip()]
+            category = (overrides.get('category') or '').strip()
+            if category:
+                user_tags.append(category)
+            # Case-insensitive deduplication preserves the spelling entered
+            # by the user, so "Manga" does not become "manga".
+            combined = []
+            positions = {}
+            for tag in [*existing_tags, *user_tags]:
+                tag = str(tag).strip()
+                if not tag:
+                    continue
+                key = tag.casefold()
+                if key in positions:
+                    # Explicitly supplied values take priority over metadata.
+                    if tag in user_tags:
+                        combined[positions[key]] = tag
+                else:
+                    positions[key] = len(combined)
+                    combined.append(tag)
+            mi.tags = combined
 
         pd.msg = mi.title
 
