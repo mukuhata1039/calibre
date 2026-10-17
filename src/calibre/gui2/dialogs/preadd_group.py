@@ -18,7 +18,7 @@ from qt.core import (
  
 class ReorderTable(QTableWidget):
     def __init__(self, owner):
-        super().__init__(0, 8)
+        super().__init__(0, 10)
         self.owner = owner
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -98,11 +98,13 @@ class PreAddPreview(QDialog):
         root.addLayout(controls)
 
         self.table = ReorderTable(self)
-        self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'シリーズ名', '巻数', '著者名', '登録先', '出版社', '状態'])
+        self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'タイトル', 'サブタイトル', 'シリーズ名', '巻数', '著者名', '登録先', '出版社', '状態'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table.itemChanged.connect(self.changed)
         self.table.currentCellChanged.connect(self.show_filename)
         # Keep the library's normal internal format storage as the default.
@@ -440,6 +442,7 @@ class PreAddPreview(QDialog):
                 print(f'Pre-add metadata extraction failed for {path}: {err}', file=sys.stderr)
             self.books.append({
                 'path': path, 'title': info.get('title') or name,
+                'subtitle': info.get('subtitle', ''),
                 'series': info.get('series', ''),
                 'series_reading': '',
                 'series_roman': self.romanize(info.get('series', '')),
@@ -462,12 +465,12 @@ class PreAddPreview(QDialog):
             self.table.insertRow(row)
             rank = self.order_clicks.index(i) + 1 if i in self.order_clicks else None
             display_index = f'✓ {self.order_start + rank - 1}巻' if self.order_mode and rank is not None else i + 1
-            vals = [display_index, os.path.basename(book['path']), book['series'], book['number'], book['author'], os.path.basename(os.path.normpath(book['category'])) if book['category'] else '', book['publisher'],
+            vals = [display_index, os.path.basename(book['path']), book.get('title', ''), book.get('subtitle', ''), book['series'], book['number'], book['author'], os.path.basename(os.path.normpath(book['category'])) if book['category'] else '', book['publisher'],
                     '設定済' if book['configured'] else '未設定']
             for col, value in enumerate(vals):
                 item = QTableWidgetItem('' if value is None else str(value))
                 item.setData(Qt.ItemDataRole.UserRole, i)
-                if col != 3 or self.order_mode:
+                if col != 5 or self.order_mode:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if self.order_mode:
                     if i in self.order_clicks:
@@ -622,7 +625,7 @@ class PreAddPreview(QDialog):
         self.refresh()
 
     def changed(self, item):
-        if item.column() != 3:
+        if item.column() != 5:
             return
         i = item.data(Qt.ItemDataRole.UserRole)
         try:
