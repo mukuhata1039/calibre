@@ -498,6 +498,12 @@ class AddAction(InterfaceAction):
             raise
 
     def files_dropped(self, paths):
+        # Expand dropped directories before invoking the normal add-books flow.
+        # Keep a stable ordering and ignore duplicate files and non-book content.
+        from calibre.gui2.dialogs.preadd_group_metadata import expand_book_paths
+        paths = expand_book_paths(paths)
+        if not paths:
+            return
         to_device = self.gui.stack.currentIndex() != 0
         self._add_books(paths, to_device)
 
