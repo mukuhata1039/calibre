@@ -335,7 +335,8 @@ class PreAddPreview(QDialog):
         if entry is None:
             return
         book = self.books[entry.data(Qt.ItemDataRole.UserRole)]
-        self.title.setText(book.get('title', ''))
+        # Title is manual-only: clicking a book must not populate the edit field.
+        self.title.clear()
         self.series.setText(book.get('series', ''))
         self.series_reading.setText(book.get('series_reading', ''))
         self.series_roman.setText(book.get('series_roman', ''))
@@ -483,7 +484,7 @@ class PreAddPreview(QDialog):
         self.save_undo()
         targets = self.selected()
         for i in targets:
-            if len(targets) == 1:
+            if len(targets) == 1 and self.title.text().strip():
                 self.books[i]['title'] = self.title.text().strip()
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['series_reading'] = self.series_reading.text().strip()
