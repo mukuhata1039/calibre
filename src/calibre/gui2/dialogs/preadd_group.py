@@ -521,10 +521,21 @@ class PreAddPreview(QDialog):
 
     def render_title_template(self, pattern, book):
         # Only explicitly supported fields are accepted; no attribute traversal.
+        number = book.get('number')
+        if number is not None and number != '':
+            # calibre commonly stores volume 1 as 1.0. Formatting 1.0 with
+            # :02 produces "1.0", whereas the requested two-digit volume is "01".
+            try:
+                numeric = float(number)
+                number = int(numeric) if numeric.is_integer() else numeric
+            except (TypeError, ValueError, OverflowError):
+                pass
+        else:
+            number = ''
         fields = {
             'series': book.get('series') or '',
-            'series_index': book.get('number') if book.get('number') is not None else '',
-            'index': book.get('number') if book.get('number') is not None else '',
+            'series_index': number,
+            'index': number,
             'title': book.get('title') or '',
             'authors': book.get('author') or '',
         }
