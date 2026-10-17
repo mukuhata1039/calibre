@@ -175,7 +175,8 @@ def reconnect_from_original_tree(library, source, ids=None):
                     root = os.path.realpath(source)
                     if os.path.commonpath([root, folder]) != root:
                         raise ValueError('書籍フォルダの場所が不正です')
-                    choices = [p for p in os.scandir(folder) if p.is_file() and p.name.lower().endswith(ext)]
+                    choices = ([p for p in os.scandir(folder) if p.is_file() and p.name.lower().endswith(ext)]
+                               if os.path.isdir(folder) else [])
                     if len(choices) != 1 and str(fmt).upper() == 'CBZ':
                         meta = cache.get_metadata(book_id)
                         identity = comic_identity({
