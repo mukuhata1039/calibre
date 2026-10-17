@@ -21,7 +21,7 @@ _FIELDS = frozenset(('title', 'authors', 'series', 'series_index', 'publisher', 
 
 
 def queue(library_path, book_ids, field):
-    if field not in _FIELDS:
+    if field not in _FIELDS and field != '#subtitle':
         return
     key = os.path.normcase(os.path.realpath(library_path))
     with _lock:
@@ -86,6 +86,63 @@ def _sync_file(path, data):
     return True
 
 
+def _write_epub_subtitle(epub_path, subtitle):
+    """Update the subtitle in the package metadata without changing book content."""
+    from io import BytesIO
+    from lxml import etree
+    from calibre.utils.zipfile import safe_replace
+
+    ns_dc = 'http://purl.org/dc/elements/1.1/'
+    ns_opf = 'http://www.idpf.org/2007/opf'
+    ns_container = 'urn:oasis:names:tc:opendocument:xmlns:container'
+    with zipfile.ZipFile(epub_path) as archive:
+        container = etree.fromstring(archive.read('META-INF/container.xml'))
+        roots = container.xpath('.//c:rootfile', namespaces={'c': ns_container})
+        if not roots:
+            raise ValueError('EPUB package path is missing')
+        opf_path = roots[0].get('full-path')
+        if not opf_path:
+            raise ValueError('EPUB package path is empty')
+        root = etree.fromstring(archive.read(opf_path))
+    metadata = root.find('{%s}metadata' % ns_opf)
+    if metadata is None:
+        raise ValueError('EPUB metadata element is missing')
+    # Remove previous dedicated subtitle elements while keeping main title intact.
+    old_ids = set()
+    for meta in list(metadata):
+        if meta.tag == '{%s}meta' % ns_opf and meta.get('property') == 'title-type' and (meta.text or '').strip() == 'subtitle':
+            ref = (meta.get('refines') or '').lstrip('#')
+            if ref:
+                old_ids.add(ref)
+            metadata.remove(meta)
+        elif meta.tag == '{%s}meta' % ns_opf and meta.get('name') == 'subtitle':
+            metadata.remove(meta)
+    for title in list(metadata):
+        if title.tag == '{%s}title' % ns_dc and title.get('id') in old_ids:
+            metadata.remove(title)
+    if subtitle:
+        if root.get('version', '2').startswith('3'):
+            used = {node.get('id') for node in metadata.iter() if node.get('id')}
+            sid = 'calibre-subtitle'
+            n = 2
+            while sid in used:
+                sid = 'calibre-subtitle-' + str(n)
+                n += 1
+            node = etree.SubElement(metadata, '{%s}title' % ns_dc)
+            node.set('id', sid)
+            node.text = subtitle
+            ref = etree.SubElement(metadata, '{%s}meta' % ns_opf)
+            ref.set('refines', '#' + sid)
+            ref.set('property', 'title-type')
+            ref.text = 'subtitle'
+        else:
+            node = etree.SubElement(metadata, '{%s}meta' % ns_opf)
+            node.set('name', 'subtitle')
+            node.set('content', subtitle)
+    new_xml = etree.tostring(root, encoding='utf-8', xml_declaration=True)
+    safe_replace(epub_path, opf_path, BytesIO(new_xml))
+
+
 def _sync_epub(path, data):
     """Write OPF using calibre's EPUB writer on a safe temporary copy."""
     from calibre.ebooks.metadata.book.base import Metadata
@@ -101,6 +158,8 @@ def _sync_epub(path, data):
         shutil.copy2(path, temporary)
         with open(temporary, 'r+b') as stream:
             set_metadata(stream, mi, apply_null=False, add_missing_cover=False)
+        if data.get('Subtitle') is not None:
+            _write_epub_subtitle(temporary, data['Subtitle'])
         with zipfile.ZipFile(temporary) as check:
             bad = check.testzip()
             if bad is not None:
@@ -123,6 +182,7 @@ def _snapshot(cache, book_id):
     """GUI thread only: read database metadata once, before background IO."""
     library = os.path.realpath(cache.backend.library_path)
     mi = cache.get_metadata(book_id)
+    subtitle = cache.field_for('#subtitle', book_id) if '#subtitle' in cache.field_metadata else None
     formats = []
     for fmt in ('CBZ', 'EPUB'):
         path = cache.format_abspath(book_id, fmt)
@@ -148,6 +208,7 @@ def _snapshot(cache, book_id):
                 'Authors': list(mi.authors or ()),
                 'Publisher': mi.publisher,
                 'Tags': list(mi.tags or ()),
+                'Subtitle': subtitle,
             }
         formats.append((fmt, path, data))
     return formats
