@@ -360,3 +360,70 @@ def migrate_book_cbz_to_external(db, book_id):
         pending['pending_comicinfo'] = [x for x in pending['pending_comicinfo'] if x != key]
         save_manifest(library, pending)
     return target
+
+
+def ensure_external_cbz_mirror(db, book_id, storage_root):
+    """Create or reuse a verified external CBZ mirror for a pre-existing book.
+
+    Never overwrite files or redirect an existing library to a different root.
+    Import and staging are separate so a failed copy leaves the internal intact.
+    """
+    book_id = int(book_id)
+    library = db.library_path
+    root = os.path.realpath(os.path.abspath(storage_root))
+    if not os.path.isdir(root):
+        raise NotADirectoryError(root)
+    library_real = os.path.realpath(os.path.abspath(library))
+    if os.path.commonpath((library_real, root)) == library_real:
+        raise ValueError('外部保存先にはcalibreライブラリの外のフォルダを指定してください')
+    manifest = load_manifest(library)
+    configured = manifest.get('storage_root') or ''
+    if configured and os.path.normcase(os.path.realpath(configured)) != os.path.normcase(root):
+        raise ValueError('既存の外部保管庫と異なるフォルダが指定されています')
+    existing = resolve_external_format(library, book_id, 'CBZ')
+    if existing:
+        return existing
+    if manifest['books'].get(str(book_id), {}).get('CBZ'):
+        raise FileNotFoundError('登録済みの外部CBZが見つかりません（上書きはしません）')
+    internal = db.new_api.format_abspath(book_id, 'CBZ')
+    if not internal or not os.path.isfile(internal):
+        raise FileNotFoundError('内部CBZが見つかりません')
+    relative = os.path.join(str(book_id), 'book.cbz')
+    if os.path.exists(os.path.join(root, relative)):
+        raise FileExistsError('未登録の同名外部CBZが存在します。保護のため上書きしません')
+    copied = copy_to_store(internal, root, relative)
+    # Verify the actual ZIP contents, not just copy size.
+    try:
+        with zipfile.ZipFile(internal) as source, zipfile.ZipFile(copied) as target:
+            original = [(i.filename, i.file_size, i.CRC) for i in source.infolist()]
+            mirrored = [(i.filename, i.file_size, i.CRC) for i in target.infolist()]
+            if original != mirrored or target.testzip() is not None:
+                raise ValueError('外部コピーのZIP検証に失敗しました')
+    except Exception:
+        os.unlink(copied)
+        raise
+    if not configured:
+        set_storage_root(library, root)
+    register_external_format(library, book_id, 'CBZ', relative)
+    return copied
+
+
+def external_cbz_migration_state(library_path, book_id):
+    """Return reversible migration state without modifying any files."""
+    metadata = _quarantine_path(library_path, book_id, 'CBZ')
+    if os.path.isfile(metadata):
+        return 'migrated'
+    data = load_manifest(library_path)
+    if data.get('books', {}).get(str(int(book_id)), {}).get('CBZ'):
+        return 'mirrored'
+    return 'internal'
+
+
+def migrate_existing_cbz(db, book_id, storage_root):
+    """Copy, verify, update ComicInfo, then reversibly stage one existing CBZ."""
+    state = external_cbz_migration_state(db.library_path, book_id)
+    if state == 'migrated':
+        return 'already migrated'
+    ensure_external_cbz_mirror(db, book_id, storage_root)
+    migrate_book_cbz_to_external(db, book_id)
+    return 'migrated'
