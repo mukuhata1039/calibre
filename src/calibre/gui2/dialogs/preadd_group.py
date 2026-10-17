@@ -116,7 +116,7 @@ class PreAddPreview(QDialog):
 
         self.import_fields = {}
         field_labels = [
-            ('title', 'タイトル'), ('authors', '著者'), ('series', 'シリーズ'),
+            ('title', 'タイトル'), ('subtitle', 'サブタイトル'), ('authors', '著者'), ('series', 'シリーズ'),
             ('series_index', '巻数'), ('publisher', '出版社'),
             ('tags', '元ファイルのタグ'), ('cover', '表紙'),
             ('pubdate', '出版日'), ('comments', 'あらすじ'), ('identifiers', '識別子'),
@@ -125,10 +125,10 @@ class PreAddPreview(QDialog):
         field_row.addWidget(QLabel('登録する情報'))
         active_fields = gprefs.get('preadd_import_fields', None)
         if active_fields is None:
-            active_fields = ['title', 'authors', 'series', 'series_index', 'publisher', 'cover']
+            active_fields = ['title', 'subtitle', 'authors', 'series', 'series_index', 'publisher', 'cover']
         for key, label in field_labels:
             control = QCheckBox(label)
-            control.setChecked(key in active_fields)
+            control.setChecked(key in active_fields or key == 'subtitle')
             self.import_fields[key] = control
             control.toggled.connect(self.persist_import_fields)
             field_row.addWidget(control)
@@ -153,6 +153,12 @@ class PreAddPreview(QDialog):
         self.title_preview.setWordWrap(True)
         root.addWidget(self.title_preview)
         self.title.textChanged.connect(self.update_title_preview)
+        subtitle_row = QHBoxLayout()
+        subtitle_row.addWidget(QLabel('サブタイトル'))
+        self.subtitle = QLineEdit()
+        self.subtitle.setPlaceholderText('選択した書籍に適用するサブタイトル（空欄なら変更しない）')
+        subtitle_row.addWidget(self.subtitle)
+        root.addLayout(subtitle_row)
 
         filename_row = QHBoxLayout()
         filename_row.addWidget(QLabel('ファイル名（文字を選択して Ctrl+C でコピー）'))
@@ -322,6 +328,7 @@ class PreAddPreview(QDialog):
         return {
             os.path.normcase(os.path.abspath(book['path'])): {
                 'title': book.get('title', ''),
+                'subtitle': book.get('subtitle', ''),
                 'series': book['series'],
                 'series_roman': book.get('series_roman') or self.romanize(book.get('series_reading') or book['series']),
                 'series_index': book['number'],
@@ -360,6 +367,7 @@ class PreAddPreview(QDialog):
         book = self.books[entry.data(Qt.ItemDataRole.UserRole)]
         # Title is manual-only: clicking a book must not populate the edit field.
         self.title.clear()
+        self.subtitle.clear()
         self.update_title_preview()
         self.series.setText(book.get('series', ''))
         self.series_reading.setText(book.get('series_reading', ''))
@@ -569,6 +577,8 @@ class PreAddPreview(QDialog):
         for i in targets:
             if i in titles:
                 self.books[i]['title'] = titles[i]
+            if self.subtitle.text().strip():
+                self.books[i]['subtitle'] = self.subtitle.text().strip()
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['series_reading'] = self.series_reading.text().strip()
             self.books[i]['series_roman'] = self.series_roman.text().strip()
