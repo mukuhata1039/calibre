@@ -272,6 +272,17 @@ class PreAddPreview(QDialog):
         if idx >= 0:
             self.category.setCurrentIndex(idx)
         self.category.blockSignals(False)
+        try:
+            from calibre.gui2.external_book_store import load_manifest
+            data = load_manifest(default_library) if default_library else {}
+            if data.get('storage_root'):
+                self.external_root.setText(data['storage_root'])
+            if data.get('folder_template'):
+                self.external_folder_template.setText(data['folder_template'])
+            if data.get('filename_template'):
+                self.external_file_template.setText(data['filename_template'])
+        except Exception:
+            pass
         for book in self.books:
             if not book.get('category'):
                 book['category'] = default_library
@@ -325,7 +336,10 @@ class PreAddPreview(QDialog):
         from calibre.gui2.external_book_store import external_relative_name
         from calibre.ebooks.metadata.book.base import Metadata
         try:
-            book = self.books[0] if self.books else {}
+            row = self.table.currentRow()
+            cell = self.table.item(row, 0) if row >= 0 else None
+            index = cell.data(Qt.ItemDataRole.UserRole) if cell is not None else 0
+            book = self.books[index] if self.books and isinstance(index, int) and 0 <= index < len(self.books) else {}
             mi = Metadata(book.get('title') or '作品タイトル')
             mi.series = book.get('series') or 'シリーズ名'
             mi.series_index = float(book.get('number') or 1)
@@ -417,6 +431,7 @@ class PreAddPreview(QDialog):
             self.add_author_field()
         for idx, field in enumerate(self.author_inputs):
             field.setText(names[idx] if idx < len(names) else '')
+        self.update_external_preview()
 
     def copy_filename(self, with_extension=True):
         name = self.filename_text.text()
