@@ -251,17 +251,6 @@ class PreAddPreview(QDialog):
         if idx >= 0:
             self.category.setCurrentIndex(idx)
         self.category.blockSignals(False)
-        try:
-            from calibre.gui2.external_book_store import load_manifest
-            data = load_manifest(default_library) if default_library else {}
-            if data.get('storage_root'):
-                self.external_root.setText(data['storage_root'])
-            if data.get('folder_template'):
-                self.external_folder_template.setText(data['folder_template'])
-            if data.get('filename_template'):
-                self.external_file_template.setText(data['filename_template'])
-        except Exception:
-            pass
         for book in self.books:
             if not book.get('category'):
                 book['category'] = default_library
