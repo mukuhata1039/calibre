@@ -17,6 +17,7 @@ def read_preview_metadata(path):
                 element = next((node for node in root if node.tag.rsplit('}', 1)[-1].lower() == key.lower()), None)
                 return (element.text or '').strip() if element is not None else ''
             result['title'] = value('Title')
+            result['subtitle'] = value('Subtitle')
             result['series'] = value('Series')
             result['publisher'] = value('Publisher')
             result['tags'] = ', '.join(x for x in (value('Genre'), value('Tags')) if x)
@@ -30,6 +31,37 @@ def read_preview_metadata(path):
                     pass
         return result
     if ext == '.epub':
+        # calibre's main Metadata object does not expose the EPUB 3 subtitle.
+        # Read it separately from the package document, without editing EPUB.
+        try:
+            with zipfile.ZipFile(path) as archive:
+                container = ET.fromstring(archive.read('META-INF/container.xml'))
+                rootfile = next((x for x in container.iter()
+                                 if x.tag.rsplit('}', 1)[-1] == 'rootfile'), None)
+                opf_name = rootfile.get('full-path') if rootfile is not None else None
+                if opf_name:
+                    package = ET.fromstring(archive.read(opf_name))
+                    nodes = list(package.iter())
+                    subtitle_ids = {
+                        (x.get('refines') or '').lstrip('#')
+                        for x in nodes if x.tag.rsplit('}', 1)[-1] == 'meta'
+                        and x.get('property') == 'title-type'
+                        and (x.text or '').strip() == 'subtitle'
+                    }
+                    subtitles = [
+                        (x.text or '').strip() for x in nodes
+                        if x.tag.rsplit('}', 1)[-1] == 'title'
+                        and x.get('id') in subtitle_ids
+                    ]
+                    if not subtitles:
+                        subtitles = [
+                            (x.get('content') or '').strip() for x in nodes
+                            if x.tag.rsplit('}', 1)[-1] == 'meta'
+                            and x.get('name', '').lower() == 'subtitle'
+                        ]
+                    result['subtitle'] = next((x for x in subtitles if x), '')
+        except (OSError, KeyError, ValueError, ET.ParseError, zipfile.BadZipFile):
+            pass
         from calibre.ebooks.metadata.meta import get_metadata
         with open(path, 'rb') as stream:
             mi = get_metadata(stream, 'epub', force_read_metadata=True)
