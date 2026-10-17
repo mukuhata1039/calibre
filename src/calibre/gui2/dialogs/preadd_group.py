@@ -85,6 +85,9 @@ class PreAddPreview(QDialog):
         add = QPushButton('ファイルを追加')
         add.clicked.connect(self.add_files)
         controls.addWidget(add)
+        add_folder = QPushButton('フォルダを追加（サブフォルダも検索）')
+        add_folder.clicked.connect(self.add_folder)
+        controls.addWidget(add_folder)
         self.remaining = QCheckBox('未設定のみ表示')
         self.remaining.toggled.connect(self.refresh)
         controls.addWidget(self.remaining)
@@ -208,8 +211,7 @@ class PreAddPreview(QDialog):
         self.setAcceptDrops(True)
 
     def category_choices(self):
-        defaults = ['', '小説', '漫画', '同人', 'ライトノベル', '雑誌', '実用書', 'その他']
-        return list(dict.fromkeys(defaults + list(gprefs.get('preadd_custom_categories', []))))
+        return [''] + list(dict.fromkeys(x for x in gprefs.get('preadd_custom_categories', []) if x))
 
     def add_category(self):
         name, ok = QInputDialog.getText(self, '作品区分の追加', '新しい区分名')
@@ -292,6 +294,11 @@ class PreAddPreview(QDialog):
             QApplication.clipboard().setText(
                 name if with_extension else os.path.splitext(name)[0]
             )
+
+    def add_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, '書籍フォルダを選択')
+        if folder:
+            self.append([folder])
 
     def add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
