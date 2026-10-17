@@ -78,7 +78,7 @@ class PreAddPreview(QDialog):
             shortcut.activated.connect(self.redo)
             self.redo_shortcuts.append(shortcut)
         root = QVBoxLayout(self)
-        root.addWidget(QLabel('書籍をここにドロップ。複数選択し、グループごとに共通情報を設定します。\n試作版：ライブラリへの登録はしません。'))
+        root.addWidget(QLabel('書籍の情報を確認・変更し、確定するとライブラリへ登録します。\n複数選択した書籍には共通設定を適用できます。'))
 
         controls = QHBoxLayout()
         add = QPushButton('ファイルを追加')
@@ -289,7 +289,7 @@ class PreAddPreview(QDialog):
             except Exception as err:
                 print(f'Pre-add metadata extraction failed for {path}: {err}', file=sys.stderr)
             self.books.append({
-                'path': path, 'title': info.get('title', ''),
+                'path': path, 'title': info.get('title') or name,
                 'series': info.get('series', ''),
                 'number': info.get('number', number),
                 'tags': info.get('tags', ''),
