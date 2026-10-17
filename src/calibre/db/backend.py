@@ -2027,6 +2027,14 @@ class DB:
             for fmt, fname, path in removals:
                 path = self.format_abspath(book_id, fmt, fname, path)
                 if path:
+                    external = self.external_format_abspath(book_id, fmt)
+                    if external and os.path.normcase(os.path.realpath(path)) == os.path.normcase(os.path.realpath(external)):
+                        # Moving an external file into calibre's trash here
+                        # would silently delete the user's separate archive.
+                        raise ValueError(
+                            'External format deletion is not supported yet. '
+                            'Restore an internal copy before deleting this format.'
+                        )
                     paths.add(path)
                     removed_map[book_id].add(fmt.upper())
             if paths:
