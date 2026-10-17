@@ -46,7 +46,7 @@ def backup_library(library, outfile):
     from calibre.db.backend import DB
     if not is_library(library):
         raise ValueError('metadata.dbがないライブラリです')
-    if os.path.realpath(outfile).startswith(os.path.realpath(library) + os.sep):
+    if os.path.normcase(os.path.realpath(outfile)).startswith(os.path.normcase(os.path.realpath(library)) + os.sep):
         raise ValueError('バックアップはライブラリの外へ保存してください')
     fd, tmpdb = tempfile.mkstemp(suffix='.db')
     os.close(fd)
@@ -77,8 +77,9 @@ def backup_library(library, outfile):
                     rel = os.path.relpath(original, library).replace(os.sep, '/')
                     if rel in ('metadata.db', MANIFEST, 'external-books.json'):
                         continue
-                    # Keep only database/metadata/config/cover files, not formats.
-                    if Path(name).suffix.lower() in EXCLUDED:
+                    # Allowlist metadata files: unknown ebook extensions must never enter backup.
+                    # Covers/OPFs/metadata sidecars are all that book folders need.
+                    if name.lower() not in ('cover.jpg', 'cover.jpeg', 'cover.png', 'metadata.opf') and rel not in ('metadata_db_prefs_backup.json',):
                         continue
                     if os.path.islink(original):
                         continue
