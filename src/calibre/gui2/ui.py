@@ -15,7 +15,7 @@ from queue import Empty, Queue
 from typing import Literal, overload
 
 import apsw
-from qt.core import QAction, QApplication, QDialog, QDialogButtonBox, QEvent, QFont, QIcon, QMenu, QSystemTrayIcon, Qt, QTimer, QUrl, pyqtSignal
+from qt.core import QAction, QApplication, QDialog, QDialogButtonBox, QEvent, QFont, QIcon, QMenu, QMessageBox, QSystemTrayIcon, Qt, QTimer, QUrl, pyqtSignal
 
 from calibre import detect_ncpus, force_unicode, prints, timed_print
 from calibre.constants import DEBUG, __appname__, config_dir, filesystem_encoding, ismacos, iswindows
@@ -1450,7 +1450,60 @@ class Main(
 
         open_url(QUrl(localize_website_link('https://calibre-ebook.com/donate')))
 
+    def sync_external_comic_info_before_quit(self):
+        """Finish pending ComicInfo updates before leaving the GUI.
+
+        On failure the user explicitly chooses whether to cancel quitting or
+        leave unsynchronized changes queued for the next launch.
+        """
+        try:
+            from calibre.gui2.external_book_store import (
+                pending_comic_info_sync, sync_queued_comic_info,
+            )
+            db = self.current_db
+            outstanding = pending_comic_info_sync(db.library_path)
+            if not outstanding:
+                return True
+            if self._external_comic_sync_running:
+                raise RuntimeError('ComicInfo synchronization is already running')
+            self._external_comic_sync_running = True
+            try:
+                _done, failed = sync_queued_comic_info(db)
+            finally:
+                self._external_comic_sync_running = False
+            outstanding = pending_comic_info_sync(db.library_path)
+            if not outstanding and not failed:
+                return True
+            details = '\\n'.join(f'{key}: {value}' for key, value in failed.items())
+            explanation = (
+                f'{len(outstanding)}冊のCBZのComicInfo.xmlを同期できませんでした。'
+                '\\n同期されていない変更は次回起動まで記録されます。'
+                '\\nそれでも終了しますか？'
+            )
+        except Exception:
+            import traceback
+            details = traceback.format_exc()
+            explanation = (
+                '外部CBZの終了時同期に失敗しました。'
+                '\\n未同期の変更が残っている可能性があります。'
+                '\\nそれでも終了しますか？'
+            )
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle('外部CBZの同期未完了')
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText(explanation)
+        dialog.setDetailedText(details)
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        dialog.button(QMessageBox.StandardButton.Yes).setText('同期せず終了')
+        dialog.button(QMessageBox.StandardButton.No).setText('終了しない')
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        return dialog.exec() == QMessageBox.StandardButton.Yes
+
     def confirm_quit(self):
+        if not self.sync_external_comic_info_before_quit():
+            return False
         if self.job_manager.has_jobs():
             msg = _('There are active jobs. Are you sure you want to quit?')
             if self.job_manager.has_device_jobs():
