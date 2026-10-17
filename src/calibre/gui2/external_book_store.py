@@ -358,21 +358,26 @@ def external_relative_name(mi, book_id, fmt, data=None, library_name=''):
     validate_storage_template(filename, folder=False)
 
     def clean(value):
-        value = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', '_', str(value or ''))
+        value = re.sub(r'[<>:"/\\|?*]', '_', str(value or ''))
+        value = re.sub(r'[\x00-\x1f]', '_', value)
         return value.strip(' .')[:100].rstrip(' .') or '名称未設定'
 
     number = mi.series_index if mi.series_index is not None else 0
+    series_text = _PREFIX.sub('', str(mi.series or '')).strip()
+    title_text = str(mi.title or '')
     values = {
-        'title': clean(mi.title), 'series': clean(mi.series or '単巻・シリーズなし'),
+        'title': clean(title_text), 'series': clean(series_text or '単巻・シリーズなし'),
         'series_index': int(number) if float(number).is_integer() else number,
         'authors': clean('×'.join(mi.authors or ())), 'publisher': clean(mi.publisher),
         'library': clean(library_name),
     }
-    folder_parts = [clean(part.format(**values)) for part in folder.replace('\\\\', '/').split('/') if part]
+    folder_parts = [clean(part.format(**values)) for part in folder.replace('\\', '/').split('/') if part]
     base = clean(filename.format(**values))
+    if (filename == DEFAULT_FILE_TEMPLATE and series_text
+            and normalized_name(title_text) == normalized_name(series_text)):
+        base = clean(f"{values['series']} 第{values['series_index']:02}巻")
     extension = str(fmt).lower().lstrip('.')
-    # A short ID suffix guarantees distinct names for equal metadata.
-    return os.path.join(*folder_parts, f'{base} [{int(book_id)}].{extension}')
+    return os.path.join(*folder_parts, f'{base}.{extension}')
 
 
 def remove_empty_external_parents(path, root):
@@ -411,6 +416,11 @@ def organize_external_format(db, book_id, fmt, metadata=None):
     mi = metadata if metadata is not None else db.new_api.get_metadata(int(book_id))
     new_rel = external_relative_name(mi, book_id, fmt, data, os.path.basename(os.path.normpath(library)))
     new = _safe_external_path(root, new_rel)
+    # Only add a calibre ID when another book already owns the desired name.
+    if os.path.lexists(new) and os.path.normcase(os.path.realpath(new)) != os.path.normcase(os.path.realpath(old)):
+        stem, ext = os.path.splitext(new_rel)
+        new_rel = f'{stem} [{book_id}]{ext}'
+        new = _safe_external_path(root, new_rel)
     if os.path.normcase(os.path.realpath(old)) == os.path.normcase(os.path.realpath(new)):
         return old
     if os.path.lexists(new):
