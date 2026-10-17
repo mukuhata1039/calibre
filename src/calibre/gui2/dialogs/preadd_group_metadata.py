@@ -41,3 +41,35 @@ def read_preview_metadata(path):
         if mi.series:
             result['number'] = mi.series_index
     return result
+
+
+BOOK_EXTENSIONS = frozenset({
+    '.epub', '.cbz', '.cbr', '.pdf', '.azw', '.azw3', '.mobi',
+    '.txt', '.fb2', '.djvu', '.docx', '.rtf', '.html', '.htm',
+    '.kepub', '.kfx',
+})
+
+
+def expand_book_paths(paths):
+    """Recursively expand local folders, ignoring non-books and duplicates."""
+    result = []
+    seen = set()
+
+    def add(path):
+        normalized = os.path.normcase(os.path.abspath(path))
+        if normalized not in seen and os.path.isfile(path):
+            seen.add(normalized)
+            result.append(os.path.abspath(path))
+
+    for source in paths:
+        source = os.path.abspath(os.fspath(source))
+        if os.path.isdir(source):
+            for root, dirs, files in os.walk(source, followlinks=False):
+                dirs[:] = sorted(d for d in dirs if not os.path.islink(os.path.join(root, d)))
+                for name in sorted(files):
+                    if os.path.splitext(name)[1].lower() in BOOK_EXTENSIONS:
+                        add(os.path.join(root, name))
+        elif os.path.isfile(source):
+            # Explicitly dropped files follow calibre's normal file import rules.
+            add(source)
+    return result
