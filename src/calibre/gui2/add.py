@@ -692,6 +692,8 @@ class Adder(QObject):
                                 raise FileNotFoundError('Imported calibre format is missing')
                             copy_to_store(canonical, store, relative)
                             register_external_format(library_path, book_id, fmt, relative)
+                            from calibre.gui2.external_book_store import organize_external_format
+                            organize_external_format(dbref(), book_id, fmt)
                             if fmt.lower() == 'cbz':
                                 from calibre.gui2.external_book_store import queue_comic_info_sync
                                 queue_comic_info_sync(library_path, book_id)
