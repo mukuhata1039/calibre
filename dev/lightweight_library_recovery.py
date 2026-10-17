@@ -149,6 +149,15 @@ def reconnect_from_original_tree(library, source, ids=None):
     try:
         cache = db.new_api
         selection = sorted(ids if ids is not None else cache.all_book_ids())
+        identity_counts = {}
+        for current_id in selection:
+            try:
+                meta = cache.get_metadata(int(current_id))
+                key = comic_identity({'Title': meta.title, 'Series': meta.series,
+                                      'Number': str(meta.series_index) if meta.series else ''})
+                identity_counts[key] = identity_counts.get(key, 0) + 1
+            except Exception:
+                continue
         for book_id in selection:
             book_id = int(book_id)
             try:
@@ -174,7 +183,7 @@ def reconnect_from_original_tree(library, source, ids=None):
                             'Number': str(meta.series_index) if meta.series else '',
                         })
                         fallback = cbz_candidates.get(identity, ())
-                        if len(fallback) == 1:
+                        if len(fallback) == 1 and identity_counts.get(identity) == 1:
                             candidates = fallback
                         else:
                             candidates = ()
