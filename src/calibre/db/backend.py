@@ -2756,6 +2756,20 @@ class DB:
         import traceback
 
         self.guard_pending_external_comic_info(path_map)
+        # External-only formats require explicit resolution. In particular,
+        # never drop metadata because a removable storage drive is offline.
+        manifest_file = os.path.join(self.library_path, 'external-books.json')
+        if os.path.isfile(manifest_file):
+            from calibre.gui2.external_book_store import load_manifest, resolve_external_format
+            manifest = load_manifest(self.library_path)
+            for book_id in path_map:
+                formats = manifest.get('books', {}).get(str(int(book_id)), {})
+                for fmt in formats:
+                    if not resolve_external_format(self.library_path, book_id, fmt):
+                        raise ValueError(
+                            f'Book {book_id}: external {fmt} is unavailable. '
+                            'Reconnect the external drive before deleting.'
+                        )
         self.ensure_trash_dir()
         removed, failures = [], {}
         parent_paths = set()
