@@ -256,3 +256,59 @@ def restore_external_format_test(library_path, book_id, fmt):
     os.replace(backup, original)
     os.unlink(metadata)
     return original
+
+
+def queue_comic_info_sync(library_path, book_id):
+    """Queue a registered CBZ for later synchronization, without rewriting it."""
+    data = load_manifest(library_path)
+    if 'CBZ' not in data['books'].get(str(int(book_id)), {}):
+        return False
+    pending = data.setdefault('pending_comicinfo', [])
+    key = str(int(book_id))
+    if key not in pending:
+        pending.append(key)
+        save_manifest(library_path, data)
+    return True
+
+
+def pending_comic_info_sync(library_path):
+    return tuple(load_manifest(library_path).get('pending_comicinfo', ()))
+
+
+def sync_queued_comic_info(db):
+    """Synchronize pending books from calibre's current DB to external CBZ.
+
+    Failed books remain in the queue. This deliberately never updates calibre
+    metadata from ComicInfo.xml: calibre is the authoritative source.
+    """
+    library_path = db.library_path
+    data = load_manifest(library_path)
+    pending = list(data.get('pending_comicinfo', ()))
+    successful, failures = [], {}
+    for key in pending:
+        try:
+            book_id = int(key)
+            path = resolve_external_format(library_path, book_id, 'CBZ')
+            if not path:
+                raise FileNotFoundError('External CBZ is unavailable')
+            mi = db.new_api.get_metadata(book_id)
+            changes = {
+                'Title': mi.title or '',
+                'Series': mi.series or '',
+                'Number': str(mi.series_index) if mi.series else '',
+                'Writer': '×'.join(a for a in (mi.authors or ()) if a != 'Unknown'),
+                'Publisher': mi.publisher or '',
+                'Tags': ', '.join(mi.tags or ()),
+            }
+            write_comic_info(path, changes)
+            successful.append(key)
+        except Exception as err:
+            failures[key] = str(err)
+    if successful:
+        # Do not lose work queued by another operation while syncing.
+        latest = load_manifest(library_path)
+        latest['pending_comicinfo'] = [
+            key for key in latest.get('pending_comicinfo', ()) if key not in successful
+        ]
+        save_manifest(library_path, latest)
+    return successful, failures
