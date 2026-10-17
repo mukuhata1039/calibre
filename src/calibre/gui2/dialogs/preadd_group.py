@@ -476,8 +476,10 @@ class PreAddPreview(QDialog):
         if not self.selected():
             return
         self.save_undo()
-        for i in self.selected():
-            self.books[i]['title'] = self.title.text().strip()
+        targets = self.selected()
+        for i in targets:
+            if len(targets) == 1:
+                self.books[i]['title'] = self.title.text().strip()
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['series_reading'] = self.series_reading.text().strip()
             self.books[i]['series_roman'] = self.series_roman.text().strip()
