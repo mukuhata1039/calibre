@@ -2018,7 +2018,23 @@ class DB:
         atomic_rename(src_path, dest_path)
         return os.path.getsize(dest_path)
 
+    def guard_pending_external_comic_info(self, book_ids):
+        """Refuse destructive operations when archived ComicInfo is stale."""
+        manifest = os.path.join(self.library_path, 'external-books.json')
+        if not os.path.exists(manifest):
+            return
+        from calibre.gui2.external_book_store import pending_comic_info_sync
+        pending = set(pending_comic_info_sync(self.library_path))
+        stale = pending.intersection(str(int(book_id)) for book_id in book_ids)
+        if stale:
+            raise ValueError(
+                'External ComicInfo.xml is not synchronized for book IDs: '
+                + ', '.join(sorted(stale))
+                + '. Synchronize before deleting.'
+            )
+
     def remove_formats(self, remove_map, metadata_map):
+        self.guard_pending_external_comic_info(remove_map)
         self.ensure_trash_dir()
         removed_map = {}
         for book_id, removals in remove_map.items():
@@ -2739,6 +2755,7 @@ class DB:
         """
         import traceback
 
+        self.guard_pending_external_comic_info(path_map)
         self.ensure_trash_dir()
         removed, failures = [], {}
         parent_paths = set()
