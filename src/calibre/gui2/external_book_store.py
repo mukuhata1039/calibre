@@ -373,21 +373,6 @@ def external_relative_name(mi, book_id, fmt, data=None, library_name=''):
     }
     folder_parts = [clean(part.format(**values)) for part in folder.replace('\\', '/').split('/') if part]
     base = clean(filename.format(**values))
-    if filename == DEFAULT_FILE_TEMPLATE and series_text:
-        # A title such as "アマチュアビジランテ 1" or "アマチュアビジランテ 第1巻"
-        # already contains the series and number. Do not repeat both.
-        stripped = normalized_name(title_text)
-        normalized_series = normalized_name(series_text)
-        suffix = stripped[len(normalized_series):].strip() if stripped.startswith(normalized_series) else None
-        number_text = str(values['series_index'])
-        number_variants = {number_text, str(number)}
-        if isinstance(number, (int, float)):
-            number_variants.add(str(int(number)) if float(number).is_integer() else str(number))
-        if suffix is not None and (not suffix or any(
-            suffix in (n, f'第{n}巻', f'{n}巻', f'vol.{n}', f'vol {n}')
-            for n in number_variants
-        )):
-            base = clean(f"{values['series']} 第{values['series_index']:02}巻")
     extension = str(fmt).lower().lstrip('.')
     return os.path.join(*folder_parts, f'{base}.{extension}')
 
