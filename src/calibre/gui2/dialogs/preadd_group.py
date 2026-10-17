@@ -306,55 +306,6 @@ class PreAddPreview(QDialog):
             name for name, checkbox in self.import_fields.items() if checkbox.isChecked()
         ]
 
-    def choose_external_root(self):
-        folder = QFileDialog.getExistingDirectory(self, '外部書籍保管庫を選択', self.external_root.text())
-        if folder:
-            self.external_root.setText(folder)
-
-    def update_external_preview(self, *_):
-        from calibre.gui2.external_book_store import external_relative_name
-        from calibre.ebooks.metadata.book.base import Metadata
-        try:
-            row = self.table.currentRow()
-            cell = self.table.item(row, 0) if row >= 0 else None
-            index = cell.data(Qt.ItemDataRole.UserRole) if cell is not None else 0
-            book = self.books[index] if self.books and isinstance(index, int) and 0 <= index < len(self.books) else {}
-            mi = Metadata(book.get('title') or '作品タイトル')
-            mi.series = book.get('series') or 'シリーズ名'
-            mi.series_index = float(book.get('number') or 1)
-            mi.authors = [book.get('author') or '著者']
-            mi.publisher = book.get('publisher') or ''
-            settings = {
-                'folder_template': self.external_folder_template.text(),
-                'filename_template': self.external_file_template.text(),
-            }
-            relative = external_relative_name(mi, 1, 'CBZ', settings, 'manga')
-            self.external_preview.setText('保存先プレビュー: ' + os.path.join(
-                self.external_root.text(), relative
-            ))
-        except Exception as err:
-            self.external_preview.setText('保存先プレビュー: ' + str(err))
-
-    def external_mirror_settings(self):
-        from calibre.gui2.external_book_store import validate_storage_template
-        try:
-            folder = self.external_folder_template.text()
-            filename = self.external_file_template.text()
-            validate_storage_template(folder, folder=True)
-            validate_storage_template(filename, folder=False)
-        except Exception as err:
-            QMessageBox.warning(self, '外部保存形式が無効', str(err))
-            return None
-        root = self.external_root.text().strip()
-        if not root or not os.path.isdir(root):
-            QMessageBox.warning(self, '外部保存先が無効', '存在する外部保管庫のフォルダを指定してください。')
-            return None
-        root = os.path.abspath(os.path.expanduser(root))
-        gprefs['preadd_external_mirror_root'] = root
-        gprefs['preadd_external_folder_template'] = folder
-        gprefs['preadd_external_file_template'] = filename
-        return root, folder, filename
-
     def metadata_overrides(self):
         return {
             os.path.normcase(os.path.abspath(book['path'])): {
@@ -410,7 +361,6 @@ class PreAddPreview(QDialog):
             self.add_author_field()
         for idx, field in enumerate(self.author_inputs):
             field.setText(names[idx] if idx < len(names) else '')
-        self.update_external_preview()
 
     def copy_filename(self, with_extension=True):
         name = self.filename_text.text()
