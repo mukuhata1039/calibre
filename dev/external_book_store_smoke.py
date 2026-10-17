@@ -10,7 +10,7 @@ import unittest
 import zipfile
 
 from calibre.gui2.external_book_store import (
-    comic_identity, copy_to_store, read_comic_info, write_comic_info,\n    set_storage_root, register_external_format, resolve_external_format,
+    comic_identity, copy_to_store, read_comic_info, write_comic_info,\n    set_storage_root, register_external_format, resolve_external_format,\n    queue_comic_info_sync, pending_comic_info_sync, sync_queued_comic_info,
 )
 
 
@@ -31,6 +31,50 @@ class ExternalStoreSmoke(unittest.TestCase):
             with zipfile.ZipFile(cbz) as z:
                 self.assertEqual(z.read('001.jpg'), image)
             self.assertEqual(comic_identity(info), ('作品', '3.0', '作品 3'))
+
+    def test_queued_comic_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lib = os.path.join(tmp, 'library')
+            store = os.path.join(tmp, 'store')
+            os.makedirs(lib)
+            os.makedirs(store)
+            with open(os.path.join(lib, 'metadata.db'), 'wb') as f:
+                f.write(b'test')
+            cbz = os.path.join(store, 'book.cbz')
+            with zipfile.ZipFile(cbz, 'w') as z:
+                z.writestr('001.jpg', b'page')
+            set_storage_root(lib, store)
+            register_external_format(lib, 10, 'CBZ', 'book.cbz')
+            self.assertTrue(queue_comic_info_sync(lib, 10))
+            self.assertTrue(queue_comic_info_sync(lib, 10))
+            self.assertEqual(pending_comic_info_sync(lib), ('10',))
+
+            class FakeMetadata:
+                title = 'アマチュアビジランテ 3'
+                series = 'アマチュアビジランテ'
+                series_index = 3.0
+                authors = ['著者']
+                publisher = '講談社'
+                tags = []
+
+            class FakeApi:
+                def get_metadata(self, book_id):
+                    self_id = book_id
+                    if self_id != 10:
+                        raise KeyError(book_id)
+                    return FakeMetadata()
+
+            class FakeDatabase:
+                library_path = lib
+                new_api = FakeApi()
+
+            done, failures = sync_queued_comic_info(FakeDatabase())
+            self.assertEqual(done, ['10'])
+            self.assertFalse(failures)
+            self.assertEqual(read_comic_info(cbz)['Series'], 'アマチュアビジランテ')
+            self.assertFalse(pending_comic_info_sync(lib))
+            with zipfile.ZipFile(cbz) as z:
+                self.assertEqual(z.read('001.jpg'), b'page')
 
     def test_backend_external_path_resolution(self):
         from calibre.db.backend import DB
