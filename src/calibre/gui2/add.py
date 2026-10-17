@@ -92,6 +92,7 @@ class Adder(QObject):
         callback=None,
         pool=None,
         list_of_archives=False,
+        metadata_overrides=None,
     ):
         if isinstance(source, str):
             source = make_long_path_useable(source)
@@ -100,6 +101,7 @@ class Adder(QObject):
         if not validate_source(source, parent):
             return
         QObject.__init__(self, parent)
+        self.metadata_overrides = metadata_overrides or {}
         self.author_map_rules = None
         if gprefs.get('author_map_on_add_rules'):
             from calibre.ebooks.metadata.author_mapper import compile_rules as acr
@@ -469,6 +471,30 @@ class Adder(QObject):
                     mi.author_sort = authors_to_sort_string(mi.authors)
                 else:
                     mi.author_sort = self.db.author_sort_from_authors(mi.authors)
+
+        # Apply user-selected metadata after reading the source EPUB/PDF but
+        # before the book is created in the library.
+        overrides = None
+        for source_path in paths:
+            key = os.path.normcase(os.path.abspath(source_path))
+            overrides = self.metadata_overrides.get(key)
+            if overrides is not None:
+                break
+        if overrides:
+            if overrides.get('series'):
+                mi.series = overrides['series']
+            if overrides.get('series_index') is not None and overrides.get('series'):
+                mi.series_index = float(overrides['series_index'])
+            if overrides.get('authors'):
+                mi.authors = [x.strip() for x in overrides['authors'].split('&') if x.strip()]
+                mi.author_sort = authors_to_sort_string(mi.authors)
+            if overrides.get('publisher'):
+                mi.publisher = overrides['publisher']
+            if overrides.get('tags'):
+                new_tags = [x.strip() for x in overrides['tags'].split(',') if x.strip()]
+                mi.tags = list(dict.fromkeys((mi.tags or []) + new_tags))
+            if overrides.get('category'):
+                mi.tags = list(dict.fromkeys((mi.tags or []) + [overrides['category']]))
 
         pd.msg = mi.title
 
