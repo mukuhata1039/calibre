@@ -668,6 +668,19 @@ class AddAction(InterfaceAction):
                 groups.setdefault(library, []).append(path)
             from calibre.gui2.add import Adder
             from calibre.db.legacy import LibraryDatabase
+            def ensure_series_sort_column(database):
+                field = '#series_roman'
+                if field in database.new_api.field_metadata:
+                    return
+                try:
+                    database.create_custom_column('series_roman', 'シリーズ読み (A-Z)', 'text', False)
+                except Exception as err:
+                    error_dialog(
+                        self.gui, 'ソート列の作成に失敗',
+                        f'シリーズのローマ字ソート列を作成できませんでした: {err}',
+                        show=True,
+                    )
+
             # Keep external database handles alive until their Adder finishes.
             for library, group_paths in groups.items():
                 subset = {
@@ -675,6 +688,7 @@ class AddAction(InterfaceAction):
                     for path in group_paths
                 }
                 if library == default_library:
+                    ensure_series_sort_column(self.gui.current_db)
                     Adder(
                         group_paths, metadata_overrides=subset, db=self.gui.current_db,
                         parent=self.gui,
@@ -696,6 +710,7 @@ class AddAction(InterfaceAction):
                         finally:
                             database.close()
 
+                    ensure_series_sort_column(db)
                     Adder(
                         group_paths, metadata_overrides=subset, db=db,
                         parent=self.gui, callback=external_finished,
