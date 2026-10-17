@@ -345,8 +345,8 @@ def migrate_book_cbz_to_external(db, book_id):
     if not internal or os.path.realpath(internal) == os.path.realpath(external):
         raise ValueError('An independent internal CBZ is required for migration')
     with zipfile.ZipFile(internal) as src, zipfile.ZipFile(external) as dest:
-        pages = {n: (v.file_size, v.CRC) for n in src.infolist() if n.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'))}
-        archived = {n: (v.file_size, v.CRC) for n in dest.infolist() if n.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'))}
+        pages = {item.filename: (item.file_size, item.CRC) for item in src.infolist() if item.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'))}
+        archived = {item.filename: (item.file_size, item.CRC) for item in dest.infolist() if item.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'))}
         if not pages or pages != archived:
             raise ValueError('External CBZ page inventory differs from internal original')
     target = stage_external_format_test(db, book_id, 'CBZ')
