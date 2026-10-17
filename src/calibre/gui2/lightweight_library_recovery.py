@@ -79,7 +79,11 @@ def backup_library(library, outfile):
                         continue
                     # Allowlist metadata files: unknown ebook extensions must never enter backup.
                     # Covers/OPFs/metadata sidecars are all that book folders need.
-                    if name.lower() not in ('cover.jpg', 'cover.jpeg', 'cover.png', 'metadata.opf') and rel not in ('metadata_db_prefs_backup.json',):
+                    if not (
+                        name.lower() in ('cover.jpg', 'cover.jpeg', 'cover.png', 'metadata.opf')
+                        or rel in ('metadata_db_prefs_backup.json',)
+                        or rel.startswith('.calnotes/')
+                    ):
                         continue
                     if os.path.islink(original):
                         continue
