@@ -374,7 +374,11 @@ def ensure_external_cbz_mirror(db, book_id, storage_root):
     if not os.path.isdir(root):
         raise NotADirectoryError(root)
     library_real = os.path.realpath(os.path.abspath(library))
-    if os.path.commonpath((library_real, root)) == library_real:
+    try:
+        inside_library = os.path.normcase(os.path.commonpath((library_real, root))) == os.path.normcase(library_real)
+    except ValueError:  # Different Windows drives have no common path.
+        inside_library = False
+    if inside_library:
         raise ValueError('外部保存先にはcalibreライブラリの外のフォルダを指定してください')
     manifest = load_manifest(library)
     configured = manifest.get('storage_root') or ''
