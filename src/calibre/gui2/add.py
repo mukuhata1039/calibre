@@ -481,49 +481,52 @@ class Adder(QObject):
             if overrides is not None:
                 break
         if overrides:
-            if overrides.get('title'):
+            enabled = set(overrides.get('import_fields') or ())
+            # When no selection was provided, preserve upstream behavior.
+            if 'import_fields' in overrides:
+                if 'title' not in enabled:
+                    mi.title = os.path.splitext(os.path.basename(paths[0]))[0]
+                if 'authors' not in enabled:
+                    mi.authors = ['Unknown']
+                if 'series' not in enabled:
+                    mi.series = None
+                if 'series_index' not in enabled:
+                    mi.series_index = 1.0
+                if 'publisher' not in enabled:
+                    mi.publisher = None
+                if 'tags' not in enabled:
+                    mi.tags = []
+                if 'pubdate' not in enabled:
+                    mi.pubdate = None
+                if 'comments' not in enabled:
+                    mi.comments = None
+                if 'identifiers' not in enabled:
+                    mi.identifiers = {}
+                if 'cover' not in enabled:
+                    has_cover = False
+            if 'title' in enabled and overrides.get('title'):
                 mi.title = overrides['title']
-            if overrides.get('series'):
+            if 'series' in enabled and overrides.get('series'):
                 mi.series = overrides['series']
-            if overrides.get('series_index') is not None and overrides.get('series'):
+            if 'series_index' in enabled and overrides.get('series_index') is not None and mi.series:
                 mi.series_index = float(overrides['series_index'])
-            if overrides.get('authors'):
+            if 'authors' in enabled and overrides.get('authors'):
                 mi.authors = [overrides['authors'].strip()]
                 mi.author_sort = authors_to_sort_string(mi.authors)
-            if overrides.get('publisher'):
+            if 'publisher' in enabled and overrides.get('publisher'):
                 mi.publisher = overrides['publisher']
-            # Metadata.tags must always be a list, not a string. A bare
-            # string may otherwise be interpreted as individual characters.
-            existing_tags = mi.tags or []
-            if isinstance(existing_tags, str):
-                existing_tags = [x.strip() for x in existing_tags.split(',') if x.strip()]
-            else:
-                existing_tags = list(existing_tags)
-            user_tags = overrides.get('tags') or ''
-            if isinstance(user_tags, str):
-                user_tags = [x.strip() for x in user_tags.split(',') if x.strip()]
-            else:
-                user_tags = [str(x).strip() for x in user_tags if str(x).strip()]
-            category = (overrides.get('category') or '').strip()
-            if category:
-                user_tags.append(category)
-            # Case-insensitive deduplication preserves the spelling entered
-            # by the user, so "Manga" does not become "manga".
-            combined = []
-            positions = {}
-            for tag in [*existing_tags, *user_tags]:
-                tag = str(tag).strip()
-                if not tag:
-                    continue
-                key = tag.casefold()
-                if key in positions:
-                    # Explicitly supplied values take priority over metadata.
-                    if tag in user_tags:
-                        combined[positions[key]] = tag
+            if 'tags' in enabled:
+                tags = mi.tags or []
+                if isinstance(tags, str):
+                    tags = [x.strip() for x in tags.split(',') if x.strip()]
                 else:
-                    positions[key] = len(combined)
-                    combined.append(tag)
-            mi.tags = combined
+                    tags = list(tags)
+                extra = overrides.get('tags') or ''
+                if isinstance(extra, str):
+                    extra = [x.strip() for x in extra.split(',') if x.strip()]
+                mi.tags = list(dict.fromkeys(t for t in tags + list(extra) if t))
+            else:
+                mi.tags = []
 
         pd.msg = mi.title
 
