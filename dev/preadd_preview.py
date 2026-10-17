@@ -9,7 +9,7 @@ import sys
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QComboBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor,
 )
 
  
@@ -190,7 +190,7 @@ class PreAddPreview(QDialog):
             row = self.table.rowCount()
             self.table.insertRow(row)
             rank = self.order_clicks.index(i) + 1 if i in self.order_clicks else None
-            display_index = f'{self.start.value() + rank - 1}巻' if rank is not None else i + 1
+            display_index = f'✓ {self.order_start + rank - 1}巻' if self.order_mode and rank is not None else i + 1
             vals = [display_index, os.path.basename(book['path']), book['series'], book['number'], book['author'], book['category'], book['publisher'],
                     '設定済' if book['configured'] else '未設定']
             for col, value in enumerate(vals):
@@ -198,10 +198,20 @@ class PreAddPreview(QDialog):
                 item.setData(Qt.ItemDataRole.UserRole, i)
                 if col != 3 or self.order_mode:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if self.order_mode and i in self.order_candidates:
-                    item.setBackground(Qt.GlobalColor.lightGray if i in self.order_clicks else Qt.GlobalColor.white)
+                if self.order_mode:
+                    if i in self.order_clicks:
+                        item.setBackground(QColor('#237347'))
+                        item.setForeground(QColor('#ffffff'))
+                    elif i in self.order_candidates:
+                        item.setBackground(QColor('#235c9f'))
+                        item.setForeground(QColor('#ffffff'))
+                    else:
+                        item.setBackground(QColor('#42464c'))
+                        item.setForeground(QColor('#aeb4bd'))
                 self.table.setItem(row, col, item)
         self.table.blockSignals(False)
+        if self.order_mode:
+            self.table.clearSelection()
 
     def selected(self):
         return [self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
@@ -250,7 +260,7 @@ class PreAddPreview(QDialog):
         if active:
             self.order_status.setText(
                 f'クリック順を指定中: {len(self.order_clicks)} / {len(self.order_candidates)}冊'
-                '（選択した本を正しい順番にクリック）'
+                '（青＝対象、緑＝指定済み、灰＝対象外）'
             )
         else:
             self.order_status.setText('複数選択して「クリック順で巻数指定」を押してください。')
