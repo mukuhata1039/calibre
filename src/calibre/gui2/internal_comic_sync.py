@@ -82,6 +82,8 @@ def _sync_one(cache, book_id):
                 if check.testzip() is not None:
                     raise ValueError('CBZ integrity check failed')
                 ET.fromstring(check.read('ComicInfo.xml' if not comic_entries else comic_entries[0].filename))
+            # Windows cannot replace a CBZ while its original ZIP handle is open.
+            source.close()
             os.replace(temporary, path)
         finally:
             if os.path.exists(temporary):
