@@ -2,6 +2,7 @@
 # calibre pre-add grouped metadata editor — prototype only.
 # No changes to the library or source book files.
 import json
+from calibre.gui2 import gprefs
 from copy import deepcopy
 import os
 import re
@@ -10,7 +11,7 @@ import sys
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QComboBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence, QWidget,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt, QColor, QShortcut, QKeySequence, QWidget, QInputDialog,
 )
 
  
@@ -143,8 +144,14 @@ class PreAddPreview(QDialog):
         details.addWidget(QLabel('作品区分'))
         self.category = QComboBox()
         self.category.setEditable(True)
-        self.category.addItems(['', '小説', '漫画', '同人', 'ライトノベル', '雑誌', '実用書', 'その他'])
+        self.category.addItems(self.category_choices())
         details.addWidget(self.category)
+        category_add = QPushButton('区分追加')
+        category_add.clicked.connect(self.add_category)
+        details.addWidget(category_add)
+        category_remove = QPushButton('区分削除')
+        category_remove.clicked.connect(self.remove_category)
+        details.addWidget(category_remove)
         details.addWidget(QLabel('出版社'))
         self.publisher = QLineEdit()
         details.addWidget(self.publisher)
@@ -199,6 +206,36 @@ class PreAddPreview(QDialog):
         actions.addWidget(self.confirm_import)
         root.addLayout(actions)
         self.setAcceptDrops(True)
+
+    def category_choices(self):
+        defaults = ['', '小説', '漫画', '同人', 'ライトノベル', '雑誌', '実用書', 'その他']
+        return list(dict.fromkeys(defaults + list(gprefs.get('preadd_custom_categories', []))))
+
+    def add_category(self):
+        name, ok = QInputDialog.getText(self, '作品区分の追加', '新しい区分名')
+        name = name.strip()
+        if not ok or not name:
+            return
+        choices = self.category_choices()
+        if name not in choices:
+            gprefs['preadd_custom_categories'] = list(dict.fromkeys(
+                list(gprefs.get('preadd_custom_categories', [])) + [name]
+            ))
+            self.category.addItem(name)
+        self.category.setCurrentText(name)
+
+    def remove_category(self):
+        name = self.category.currentText().strip()
+        custom = list(gprefs.get('preadd_custom_categories', []))
+        if name not in custom:
+            QMessageBox.information(self, '作品区分', '削除できるのは自分で追加した区分だけです。')
+            return
+        custom.remove(name)
+        gprefs['preadd_custom_categories'] = custom
+        idx = self.category.findText(name)
+        if idx >= 0:
+            self.category.removeItem(idx)
+        self.category.setCurrentIndex(0)
 
     def metadata_overrides(self):
         return {
