@@ -8,7 +8,7 @@ import sys
 
 from qt.core import (
     QApplication, QAbstractItemView, QCheckBox, QDialog, QFileDialog,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QComboBox,
     QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, Qt,
 )
 
@@ -17,7 +17,7 @@ class PreAddPreview(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('calibre 登録前グループ設定 — 試作版')
-        self.resize(1050, 650)
+        self.resize(1350, 700)
         self.books = []
         root = QVBoxLayout(self)
         root.addWidget(QLabel('書籍をここにドロップ。複数選択し、グループごとに共通情報を設定します。\n試作版：ライブラリへの登録はしません。'))
@@ -32,8 +32,8 @@ class PreAddPreview(QDialog):
         controls.addStretch()
         root.addLayout(controls)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'シリーズ名', '巻数', '状態'])
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(['順番', 'ファイル名', 'シリーズ名', '巻数', '著者名', '作品区分', '出版社', '状態'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -55,6 +55,20 @@ class PreAddPreview(QDialog):
         self.tags = QLineEdit()
         row.addWidget(self.tags)
         root.addLayout(row)
+
+        details = QHBoxLayout()
+        details.addWidget(QLabel('著者名'))
+        self.author = QLineEdit()
+        details.addWidget(self.author)
+        details.addWidget(QLabel('作品区分'))
+        self.category = QComboBox()
+        self.category.setEditable(True)
+        self.category.addItems(['', '小説', '漫画', '同人', 'ライトノベル', '雑誌', '実用書', 'その他'])
+        details.addWidget(self.category)
+        details.addWidget(QLabel('出版社'))
+        self.publisher = QLineEdit()
+        details.addWidget(self.publisher)
+        root.addLayout(details)
 
         row = QHBoxLayout()
         apply = QPushButton('選択した書籍に適用')
@@ -106,7 +120,7 @@ class PreAddPreview(QDialog):
             name = os.path.splitext(os.path.basename(path))[0]
             m = re.search(r'(?:第\s*(\d+)\s*巻|(?:vol\.?|volume)\s*0*(\d+)|[ _（(]0*(\d{1,3})[）)]?$)', name, re.I)
             number = next((int(v) for v in m.groups() if v), None) if m else None
-            self.books.append({'path': path, 'series': '', 'number': number, 'tags': '', 'configured': False})
+            self.books.append({'path': path, 'series': '', 'number': number, 'tags': '', 'author': '', 'category': '', 'publisher': '', 'configured': False})
         self.refresh()
 
     def refresh(self, *_):
@@ -117,7 +131,7 @@ class PreAddPreview(QDialog):
                 continue
             row = self.table.rowCount()
             self.table.insertRow(row)
-            vals = [i + 1, os.path.basename(book['path']), book['series'], book['number'],
+            vals = [i + 1, os.path.basename(book['path']), book['series'], book['number'], book['author'], book['category'], book['publisher'],
                     '設定済' if book['configured'] else '未設定']
             for col, value in enumerate(vals):
                 item = QTableWidgetItem('' if value is None else str(value))
@@ -135,6 +149,9 @@ class PreAddPreview(QDialog):
         for i in self.selected():
             self.books[i]['series'] = self.series.text().strip()
             self.books[i]['tags'] = self.tags.text().strip()
+            self.books[i]['author'] = self.author.text().strip()
+            self.books[i]['category'] = self.category.currentText().strip()
+            self.books[i]['publisher'] = self.publisher.text().strip()
             self.books[i]['configured'] = True
         self.refresh()
 
