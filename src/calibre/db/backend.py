@@ -1903,35 +1903,6 @@ class DB:
                     if book_dir.name.endswith(q) and book_dir.is_dir():
                         return book_dir.path
 
-    def external_format_abspath(self, book_id, fmt):
-        """Resolve an explicitly registered external book format.
-
-        Fail closed when the external drive is disconnected. Never search for
-        similarly named books, and never modify the library metadata here.
-        """
-        try:
-            import json
-            manifest = os.path.join(self.library_path, 'external-books.json')
-            if not os.path.isfile(manifest):
-                return None
-            with open(manifest, encoding='utf-8') as stream:
-                data = json.load(stream)
-            if data.get('version') != 1:
-                return None
-            root = data.get('storage_root')
-            rel = data.get('books', {}).get(str(int(book_id)), {}).get(
-                str(fmt).upper().lstrip('.')
-            )
-            if not root or not rel or os.path.isabs(rel):
-                return None
-            root = os.path.realpath(root)
-            target = os.path.realpath(os.path.join(root, rel))
-            if os.path.commonpath((root, target)) != root:
-                return None
-            return target if os.path.isfile(target) else None
-        except (OSError, ValueError, TypeError, KeyError, AttributeError):
-            return None
-
     def format_abspath(self, book_id, fmt, fname, book_path, do_file_rename=True):
         path = os.path.join(self.library_path, book_path)
         fmt = ('.' + fmt.lower()) if fmt else ''
@@ -1940,9 +1911,6 @@ class DB:
             return fmt_path
         if not fmt:
             return
-        external = self.external_format_abspath(book_id, fmt)
-        if external:
-            return external
         q = fmt.lower()
         try:
             candidates = os.scandir(path)
@@ -2018,23 +1986,7 @@ class DB:
         atomic_rename(src_path, dest_path)
         return os.path.getsize(dest_path)
 
-    def guard_pending_external_comic_info(self, book_ids):
-        """Refuse destructive operations when archived ComicInfo is stale."""
-        manifest = os.path.join(self.library_path, 'external-books.json')
-        if not os.path.exists(manifest):
-            return
-        from calibre.gui2.external_book_store import pending_comic_info_sync
-        pending = set(pending_comic_info_sync(self.library_path))
-        stale = pending.intersection(str(int(book_id)) for book_id in book_ids)
-        if stale:
-            raise ValueError(
-                'External ComicInfo.xml is not synchronized for book IDs: '
-                + ', '.join(sorted(stale))
-                + '. Synchronize before deleting.'
-            )
-
     def remove_formats(self, remove_map, metadata_map):
-        self.guard_pending_external_comic_info(remove_map)
         self.ensure_trash_dir()
         removed_map = {}
         for book_id, removals in remove_map.items():
@@ -2043,14 +1995,6 @@ class DB:
             for fmt, fname, path in removals:
                 path = self.format_abspath(book_id, fmt, fname, path)
                 if path:
-                    external = self.external_format_abspath(book_id, fmt)
-                    if external and os.path.normcase(os.path.realpath(path)) == os.path.normcase(os.path.realpath(external)):
-                        # Moving an external file into calibre's trash here
-                        # would silently delete the user's separate archive.
-                        raise ValueError(
-                            'External format deletion is not supported yet. '
-                            'Restore an internal copy before deleting this format.'
-                        )
                     paths.add(path)
                     removed_map[book_id].add(fmt.upper())
             if paths:
@@ -2755,21 +2699,6 @@ class DB:
         """
         import traceback
 
-        self.guard_pending_external_comic_info(path_map)
-        # External-only formats require explicit resolution. In particular,
-        # never drop metadata because a removable storage drive is offline.
-        manifest_file = os.path.join(self.library_path, 'external-books.json')
-        if os.path.isfile(manifest_file):
-            from calibre.gui2.external_book_store import load_manifest, resolve_external_format
-            manifest = load_manifest(self.library_path)
-            for book_id in path_map:
-                formats = manifest.get('books', {}).get(str(int(book_id)), {})
-                for fmt in formats:
-                    if not resolve_external_format(self.library_path, book_id, fmt):
-                        raise ValueError(
-                            f'Book {book_id}: external {fmt} is unavailable. '
-                            'Reconnect the external drive before deleting.'
-                        )
         self.ensure_trash_dir()
         removed, failures = [], {}
         parent_paths = set()
