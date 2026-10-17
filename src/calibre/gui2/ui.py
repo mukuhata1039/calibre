@@ -254,16 +254,6 @@ class Main(
         t.setInterval(1000), t.timeout.connect(self.handle_changes_from_server_debounced), t.setSingleShot(True)
         self._spare_pool = None
         self.must_restart_before_config = False
-        self._external_comic_sync_running = False
-        self._external_comic_sync_timer = QTimer(self)
-        self._external_comic_sync_timer.setInterval(30000)
-        self._external_comic_sync_timer.timeout.connect(self.run_external_comic_sync)
-        self._external_comic_sync_timer.start()
-        self._external_comic_sync_now = QAction('外部CBZを今すぐ同期', self)
-        self._external_comic_sync_now.triggered.connect(lambda: self.run_external_comic_sync(manual=True))
-        self.addAction(self._external_comic_sync_now)
-        self._external_comic_sync_now.setShortcut('Ctrl+Alt+Shift+S')
-        self._external_comic_sync_now.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
 
         for ac in self.iactions.values():
             try:
