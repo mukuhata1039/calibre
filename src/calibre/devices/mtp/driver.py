@@ -91,6 +91,7 @@ class MTP_DEVICE(BASE):
                 'Documents',
             ]
             p.defaults['send_template'] = '{title} - {authors}'
+            p.defaults['preserve_unicode_filenames'] = False
             p.defaults['blacklist'] = []
             p.defaults['history'] = {}
             p.defaults['rules'] = []
@@ -496,7 +497,10 @@ class MTP_DEVICE(BASE):
 
     def create_upload_path(self, path, mdata, fname, routing):
         from calibre.devices.utils import create_upload_path
-        from calibre.utils.filenames import ascii_filename as sanitize
+        from calibre.utils.filenames import ascii_filename
+        from calibre import sanitize_file_name_unicode
+
+        sanitize = sanitize_file_name_unicode if self.get_pref('preserve_unicode_filenames') else ascii_filename
 
         ext = fname.rpartition('.')[-1].lower()
         path = routing.get(ext, path)
