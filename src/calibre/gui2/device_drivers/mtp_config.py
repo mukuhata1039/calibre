@@ -483,6 +483,9 @@ class MTPConfig(QTabWidget):
             self.formats = FormatsConfig(BOOK_EXTENSIONS, self.get_pref('format_map'))
             self.send_to = SendToConfig(self.get_pref('send_to'), self.device)
             self.template = TemplateConfig(self.get_pref('send_template'))
+            self.preserve_unicode_filenames = QCheckBox(_('Preserve Unicode filenames and folder names'))
+            self.preserve_unicode_filenames.setChecked(bool(self.get_pref('preserve_unicode_filenames')))
+            self.preserve_unicode_filenames.setToolTip(_('Keep Japanese and other Unicode characters when sending books to this device.'))
             la = QLabel(_('Choose the formats to send to the %s') % self.device.current_friendly_name)
             la.setWordWrap(True)
             self._base_b = b = QPushButton(QIcon.ic('list_remove.png'), _('&Ignore the %s in calibre') % device.current_friendly_name, self.base)
@@ -500,11 +503,12 @@ class MTPConfig(QTabWidget):
             l.addWidget(self.formats, 2, 0, 5, 1)
             l.addWidget(cif, 2, 1, 1, 1)
             l.addWidget(self.template, 3, 1, 1, 1)
-            l.addWidget(self.send_to, 4, 1, 1, 1)
-            l.addWidget(self.show_debug_button, 5, 1, 1, 1)
-            l.setRowStretch(6, 10)
-            l.addWidget(r, 7, 0, 1, 2)
-            l.setRowStretch(7, 100)
+            l.addWidget(self.preserve_unicode_filenames, 4, 1, 1, 1)
+            l.addWidget(self.send_to, 5, 1, 1, 1)
+            l.addWidget(self.show_debug_button, 6, 1, 1, 1)
+            l.setRowStretch(7, 10)
+            l.addWidget(r, 8, 0, 1, 2)
+            l.setRowStretch(8, 100)
 
             if device.is_kindle:
                 self.apnx_tab = APNX()
@@ -586,6 +590,8 @@ class MTPConfig(QTabWidget):
             t = self.template.template
             if t and t != self.device.prefs['send_template']:
                 p['send_template'] = t
+
+            p['preserve_unicode_filenames'] = self.preserve_unicode_filenames.isChecked()
 
             p.pop('send_to', None)
             s = self.send_to.value
